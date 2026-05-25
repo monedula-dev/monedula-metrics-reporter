@@ -1,6 +1,7 @@
 # monedula-metrics-reporter
 
 [![CI](https://github.com/monedula-dev/monedula-metrics-reporter/actions/workflows/ci.yml/badge.svg)](https://github.com/monedula-dev/monedula-metrics-reporter/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/monedula-dev/monedula-metrics-reporter/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/monedula-dev/monedula-metrics-reporter/security/code-scanning)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-blue.svg)](https://adoptium.net/)
 [![Kafka 3.x | 4.x](https://img.shields.io/badge/Kafka-3.x_%7C_4.x-blue.svg)](https://kafka.apache.org/)
