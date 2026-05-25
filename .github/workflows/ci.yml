@@ -52,7 +52,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         with:
           # Fail the check on any high-severity vulnerability. Moderate/low
           # appear as warnings but do not block the PR.
