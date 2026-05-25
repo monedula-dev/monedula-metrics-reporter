@@ -1,0 +1,435 @@
+{
+  "id": null,
+  "uid": "kafka-otlp-production",
+  "title": "Kafka Production",
+  "tags": ["kafka", "otlp", "production"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "topic",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(kafka_server_brokertopicmetrics_bytesinpersec_total{topic!=\"\"}, topic)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "label": "Topic"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Cluster Production Overview",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Bytes In/sec",
+      "description": "Cluster-wide ingestion throughput.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_server_brokertopicmetrics_bytesinpersec_total{topic=\"\"}[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Messages In/sec",
+      "description": "Cluster-wide message ingest rate.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_server_brokertopicmetrics_messagesinpersec_total{topic=\"\"}[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Active Connections",
+      "description": "Approximation of active client/broker connections from the socket server.",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(kafka_server_socket_server_metrics_connection_count)",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Produce Request Rate",
+      "description": "Produce requests per second across the cluster.",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_network_requestmetrics_requestspersec_total{request=\"Produce\"}[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Throughput Timeseries",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Bytes In by Topic",
+      "description": "Per-topic ingestion bytes/sec.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesinpersec_total{topic=~\"$topic\",topic!=\"\"}[5m]))",
+          "legendFormat": "{{topic}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Messages In by Topic",
+      "description": "Per-topic message rate (messages/sec).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_messagesinpersec_total{topic=~\"$topic\",topic!=\"\"}[5m]))",
+          "legendFormat": "{{topic}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Produce Latency",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Produce Latency Quantiles (broker-wide)",
+      "description": "Average across brokers of p50/p95/p99 total time for Produce requests.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "avg(kafka_network_requestmetrics_totaltimems{request=\"Produce\",quantile=\"0.5\"})",
+          "legendFormat": "p50",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "avg(kafka_network_requestmetrics_totaltimems{request=\"Produce\",quantile=\"0.95\"})",
+          "legendFormat": "p95",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "avg(kafka_network_requestmetrics_totaltimems{request=\"Produce\",quantile=\"0.99\"})",
+          "legendFormat": "p99",
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Produce Latency per node (p99)",
+      "description": "p99 total time of Produce requests, per broker node.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kafka_network_requestmetrics_totaltimems{request=\"Produce\",quantile=\"0.99\"}",
+          "legendFormat": "node {{kafka_node_id}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 400,
+      "type": "row",
+      "title": "Errors & Saturation",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Failed Produce Requests",
+      "description": "Rate of failed Produce requests per node. Should be 0 in a healthy cluster.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (kafka_node_id) (rate(kafka_server_brokertopicmetrics_failedproducerequestspersec_total[5m]))",
+          "legendFormat": "node {{kafka_node_id}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 10,
+      "type": "gauge",
+      "title": "Request Handler Idle %",
+      "description": "Fraction of time request-handler threads were idle. Reconstructed from cumulative-nanos counter via rate(). Below 20% indicates the broker is request-handler-saturated.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "avg(rate(kafka_server_kafkarequesthandlerpool_requesthandleravgidlepercent_total[5m])) / 1e9",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.2 },
+              { "color": "green", "value": 0.5 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 500,
+      "type": "row",
+      "title": "Per-Topic Detail",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Top 10 Topics by Bytes In",
+      "description": "Top 10 topics ranked by ingest bytes/sec.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesinpersec_total{topic!=\"\"}[5m])))",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "align": "auto" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Bytes In/sec" }] }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Bytes In/sec", "desc": true }]
+      },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "Value #A": false }, "indexByName": {}, "renameByName": {} } }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Per-Topic Message Rate",
+      "description": "Messages/sec by topic.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_messagesinpersec_total{topic=~\"$topic\",topic!=\"\"}[5m]))",
+          "legendFormat": "{{topic}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    }
+  ]
+}

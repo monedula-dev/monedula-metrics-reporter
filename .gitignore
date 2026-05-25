@@ -1,0 +1,10 @@
+.idea
+.DS_Store
+.gradle/
+.claude
+build/
+e2e/build/
+benchmarks/build/
+# Transient gradle stdout captures from local benchmark / soak runs
+*-run.log
+sweep.log

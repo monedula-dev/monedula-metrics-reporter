@@ -1,0 +1,24 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+
+exporters:
+  # Pull-based Prometheus exporter: exposes /metrics on port 8889 with proper
+  # # TYPE and # HELP comments so Prometheus, when scraping, ingests full
+  # metric type metadata (gauge / counter / histogram) instead of "unknown".
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    # Promote OTel Resource attributes (kafka.cluster.id, kafka.broker.id,
+    # kafka.version, ...) to Prometheus labels on every series.
+    resource_to_telemetry_conversion:
+      enabled: true
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus, debug]

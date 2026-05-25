@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+  # Sigstore keyless signing reads an OIDC token from GitHub Actions to prove
+  # the workflow's identity to the public-good signing infrastructure. Without
+  # id-token write the cosign sign-blob step below would fail.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building version $version"
+
+      - name: Build shadow JAR
+        run: ./gradlew shadowJar -PreleaseVersion=${{ steps.version.outputs.version }} --no-daemon --stacktrace
+
+      - name: Generate SBOM
+        run: ./gradlew cyclonedxBom -PreleaseVersion=${{ steps.version.outputs.version }} --no-daemon --stacktrace
+
+      - name: Run unit tests
+        run: ./gradlew :test -PreleaseVersion=${{ steps.version.outputs.version }} --no-daemon --stacktrace
+
+      - name: Run end-to-end test
+        run: ./gradlew :e2e:test -PreleaseVersion=${{ steps.version.outputs.version }} --no-daemon --stacktrace
+
+      - name: Publish to GitHub Packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew publishMavenJavaPublicationToGitHubPackagesRepository -PreleaseVersion=${{ steps.version.outputs.version }} --no-daemon --stacktrace
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign release artifacts with cosign (keyless, Sigstore)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for f in \
+            "build/libs/monedula-metrics-reporter-${VERSION}.jar" \
+            "build/libs/monedula-metrics-reporter-${VERSION}-sources.jar" \
+            "build/libs/monedula-metrics-reporter-${VERSION}-javadoc.jar" \
+            "build/reports/cyclonedx/bom.json"
+          do
+            cosign sign-blob --yes \
+              --output-signature="${f}.sig" \
+              --output-certificate="${f}.pem" \
+              "${f}"
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: |
+            build/libs/monedula-metrics-reporter-${{ steps.version.outputs.version }}.jar
+            build/libs/monedula-metrics-reporter-${{ steps.version.outputs.version }}.jar.sig
+            build/libs/monedula-metrics-reporter-${{ steps.version.outputs.version }}.jar.pem
+            build/libs/monedula-metrics-reporter-${{ steps.version.outputs.version }}-sources.jar
+            build/libs/monedula-metrics-reporter-${{ steps.version.outputs.version }}-sources.jar.sig
+            build/libs/monedula-metrics-reporter-${{ steps.version.outputs.version }}-sources.jar.pem
+            build/libs/monedula-metrics-reporter-${{ steps.version.outputs.version }}-javadoc.jar
+            build/libs/monedula-metrics-reporter-${{ steps.version.outputs.version }}-javadoc.jar.sig
+            build/libs/monedula-metrics-reporter-${{ steps.version.outputs.version }}-javadoc.jar.pem
+            build/reports/cyclonedx/bom.json
+            build/reports/cyclonedx/bom.json.sig
+            build/reports/cyclonedx/bom.json.pem

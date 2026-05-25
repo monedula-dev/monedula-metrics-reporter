@@ -1,0 +1,451 @@
+{
+  "id": null,
+  "uid": "kafka-otlp-jvm",
+  "title": "Kafka JVM Health",
+  "tags": ["kafka", "otlp", "jvm"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "node_id",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(jvm_thread_count, instance)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "label": "Instance",
+        "description": "JVM runtime metrics come from the OpenTelemetry JVM instrumentation and do not carry a kafka_node_id label; we filter by Prometheus `instance` instead."
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "JVM Stats",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Live Threads",
+      "description": "Total live threads in the JVM.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(jvm_thread_count{instance=~\"$node_id\"})",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Heap Used",
+      "description": "Total heap memory currently in use.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(jvm_memory_used_bytes{jvm_memory_type=\"heap\",instance=~\"$node_id\"})",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Class Count",
+      "description": "Number of classes currently loaded by the JVM.",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(jvm_class_count{instance=~\"$node_id\"})",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "CPU Utilization",
+      "description": "Recent JVM process CPU utilization (0-1).",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "avg(jvm_cpu_recent_utilization_ratio{instance=~\"$node_id\"})",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.6 },
+              { "color": "red", "value": 0.85 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Memory",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Heap Usage by Pool",
+      "description": "Heap memory used per pool, with overlay of total committed and limit.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (jvm_memory_pool_name) (jvm_memory_used_bytes{jvm_memory_type=\"heap\",instance=~\"$node_id\"})",
+          "legendFormat": "{{jvm_memory_pool_name}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "sum(jvm_memory_committed_bytes{jvm_memory_type=\"heap\",instance=~\"$node_id\"})",
+          "legendFormat": "committed (total)",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "sum(jvm_memory_limit_bytes{jvm_memory_type=\"heap\",instance=~\"$node_id\"})",
+          "legendFormat": "limit (total)",
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal", "group": "A" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "/committed|limit/" },
+            "properties": [
+              { "id": "custom.stacking", "value": { "mode": "none" } },
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "custom.lineStyle", "value": { "fill": "dash" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Non-Heap Memory by Pool",
+      "description": "Non-heap (metaspace, code cache, etc.) memory used per pool.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (jvm_memory_pool_name) (jvm_memory_used_bytes{jvm_memory_type=\"non_heap\",instance=~\"$node_id\"})",
+          "legendFormat": "{{jvm_memory_pool_name}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal", "group": "A" } }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Garbage Collection",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "GC Time by Collector",
+      "description": "Rate of GC time spent, by collector.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (jvm_gc_name) (rate(jvm_gc_duration_seconds_sum{instance=~\"$node_id\"}[5m]))",
+          "legendFormat": "{{jvm_gc_name}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "GC Events Rate by Collector",
+      "description": "Rate of GC events per collector.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (jvm_gc_name) (rate(jvm_gc_duration_seconds_count{instance=~\"$node_id\"}[5m]))",
+          "legendFormat": "{{jvm_gc_name}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 400,
+      "type": "row",
+      "title": "Threads & Classes",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Thread Count by State",
+      "description": "Live threads broken down by state (and daemon flag).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (jvm_thread_state, jvm_thread_daemon) (jvm_thread_count{instance=~\"$node_id\"})",
+          "legendFormat": "{{jvm_thread_state}} (daemon={{jvm_thread_daemon}})",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "stacking": { "mode": "normal", "group": "A" } }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Class Loading Activity",
+      "description": "Rate of class loads and unloads.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(jvm_class_loaded_total{instance=~\"$node_id\"}[5m]))",
+          "legendFormat": "loaded/s",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "sum(rate(jvm_class_unloaded_total{instance=~\"$node_id\"}[5m]))",
+          "legendFormat": "unloaded/s",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 500,
+      "type": "row",
+      "title": "Runtime",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "CPU Time (rate)",
+      "description": "Rate of CPU time consumed by the JVM process (seconds/sec).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(jvm_cpu_time_seconds_total{instance=~\"$node_id\"}[5m]))",
+          "legendFormat": "cpu time/s",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "avg(jvm_cpu_count{instance=~\"$node_id\"})",
+          "legendFormat": "available CPUs",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "available CPUs" }, "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash" } }, { "id": "custom.fillOpacity", "value": 0 }] }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Memory Allocation Rate",
+      "description": "Allocation rate from the JVM allocation histogram (bytes/sec).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(jvm_memory_allocation_bytes_sum{instance=~\"$node_id\"}[5m]))",
+          "legendFormat": "allocation rate",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    }
+  ]
+}

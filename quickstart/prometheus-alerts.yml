@@ -1,0 +1,128 @@
+# Example Prometheus alert rules for monedula-metrics-reporter.
+#
+# Drop this into your Prometheus configuration's `rule_files` list to alert on
+# reporter health and a small sample of common Kafka broker conditions. The
+# quickstart docker-compose does not load these by default - they're a
+# reference for operators wiring up production.
+#
+# To enable in the quickstart stack temporarily, edit quickstart/prometheus.yml
+# to add:
+#
+#   rule_files:
+#     - /etc/prometheus/alerts.yml
+#
+# and bind-mount this file at /etc/prometheus/alerts.yml in the prometheus
+# service block.
+
+groups:
+  # ---------------------------------------------------------------------------
+  # Reporter health - alerts on the plugin's own self-monitoring metrics
+  # (monedula_reporter_export_*). These are emitted by MetricCollector on every
+  # export tick, so they're available as long as ANY export is succeeding. If
+  # they disappear entirely from Prometheus, the reporter is dead, the JVM is
+  # dead, or the collector cannot reach Prometheus - see ReporterMetricsAbsent.
+  # ---------------------------------------------------------------------------
+  - name: monedula-reporter-health
+    rules:
+      - alert: ReporterExportFailing
+        expr: rate(monedula_reporter_export_failure_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OTLP exports from {{ $labels.kafka_node_id | default \"unknown\" }} are failing"
+          description: |
+            monedula-metrics-reporter on cluster {{ $labels.kafka_cluster_id }}
+            node {{ $labels.kafka_node_id }} has been failing exports for the
+            last 10 minutes (rate over 5m: {{ $value | printf "%.2f" }}/s).
+            Kafka broker traffic is unaffected; the metrics pipeline is not.
+            Check the collector endpoint, network reachability, and the
+            reporter logs for `OTLP metric export failed or timed out`.
+
+      - alert: ReporterNoSuccessfulExports
+        expr: |
+          rate(monedula_reporter_export_success_total[5m]) == 0
+          and on(service_instance_id)
+          rate(monedula_reporter_export_failure_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No successful OTLP exports from {{ $labels.kafka_node_id }} for 5m"
+          description: |
+            Every export attempt is failing. Cluster {{ $labels.kafka_cluster_id }}
+            node {{ $labels.kafka_node_id }}'s metrics are not reaching the
+            collector at all. Investigate immediately - this is the difference
+            between "slow pipeline" and "no pipeline".
+
+      - alert: ReporterExportDurationSpiking
+        expr: monedula_reporter_export_duration_ms > 1000
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Reporter export tick is slow on {{ $labels.kafka_node_id }}"
+          description: |
+            The previous export tick took more than 1 s on node
+            {{ $labels.kafka_node_id }} (current: {{ $value }}ms). The collector
+            is likely backpressured or the network is slow. Sustained values
+            approaching `otlp.metric.reporter.timeout.ms` mean upcoming batches
+            will start to drop.
+
+      - alert: ReporterMetricsAbsent
+        # If monedula_reporter_export_success_total is missing entirely, the
+        # plugin isn't running, the JVM is dead, or its OTLP path is fully
+        # broken (so even successful self-emission cannot reach Prometheus).
+        expr: absent(monedula_reporter_export_success_total)
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "monedula-metrics-reporter is not exporting at all"
+          description: |
+            Prometheus has not received the reporter's own success counter for
+            10 minutes from any source. The plugin is down, the JVM is down,
+            or there is a hard pipeline break upstream of Prometheus.
+
+  # ---------------------------------------------------------------------------
+  # Kafka broker health - a small starter set drawn from the metrics this
+  # plugin exports. Tune thresholds for your cluster's normal operating range
+  # before enabling in production.
+  # ---------------------------------------------------------------------------
+  - name: kafka-broker-health
+    rules:
+      - alert: KafkaUnderReplicatedPartitions
+        expr: kafka_server_replicamanager_underreplicatedpartitions > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Under-replicated partitions on {{ $labels.kafka_node_id }}"
+          description: |
+            {{ $value }} partition(s) under-replicated on cluster
+            {{ $labels.kafka_cluster_id }} node {{ $labels.kafka_node_id }}.
+            Check broker liveness across the ISR and replica fetcher lag.
+
+      - alert: KafkaOfflinePartitions
+        expr: kafka_controller_kafkacontroller_offlinepartitionscount > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Offline partitions in cluster {{ $labels.kafka_cluster_id }}"
+          description: |
+            {{ $value }} partition(s) without an active leader. Producers and
+            consumers for these partitions are blocked. Investigate the
+            controller and the affected brokers immediately.
+
+      - alert: KafkaNoActiveController
+        expr: sum by (kafka_cluster_id) (kafka_controller_kafkacontroller_activecontrollercount) != 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Cluster {{ $labels.kafka_cluster_id }} has no active controller"
+          description: |
+            Sum of active-controller counts across the cluster is
+            {{ $value }} (expected 1). A controller election is in progress
+            or no broker is willing/able to act as controller.

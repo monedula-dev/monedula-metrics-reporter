@@ -1,0 +1,3 @@
+rootProject.name = 'monedula-metrics-reporter'
+include 'e2e'
+include 'benchmarks'

@@ -1,0 +1,228 @@
+plugins {
+    id 'java'
+    id 'jacoco'
+    id 'maven-publish'
+    id 'signing'
+    // Migrated from com.github.johnrengelman.shadow (archived) to com.gradleup.shadow:
+    // 9.x is the first line that supports Gradle 9.
+    id 'com.gradleup.shadow' version '9.4.1'
+    // CycloneDX SBOM generator. The cyclonedxBom task writes build/reports/bom.json
+    // describing every runtime dependency the shadow JAR bundles; release.yml
+    // attaches it to the GitHub Release so consumers can verify the supply chain.
+    id 'org.cyclonedx.bom' version '3.2.4'
+    // Format / lint enforcement. spotlessCheck runs in CI; spotlessApply formats
+    // locally. The 'apply false' here lets the allprojects block below pick up
+    // each module's Java source set (root, :e2e, :benchmarks).
+    id 'com.diffplug.spotless' version '7.2.1' apply false
+}
+
+allprojects {
+    apply plugin: 'com.diffplug.spotless'
+    spotless {
+        java {
+            target 'src/main/java/**/*.java',
+                   'src/test/java/**/*.java',
+                   'src/jmh/java/**/*.java'
+            // palantir-java-format chosen for its more conservative line-breaking
+            // and 120-column default - matches the project's existing style closer
+            // than google-java-format's 100-column wrap.
+            palantirJavaFormat('2.50.0')
+            removeUnusedImports()
+            // No license-header enforcement: existing files declare 2025 as
+            // inception year and we don't want spotlessApply to roll that forward.
+        }
+    }
+}
+
+group = 'dev.monedula'
+version = providers.gradleProperty('releaseVersion').orElse('0.1.0').get()
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly "org.apache.kafka:kafka-clients:${kafkaVersion}"
+    compileOnly "org.slf4j:slf4j-api:${slf4jVersion}"
+    compileOnly "com.yammer.metrics:metrics-core:${yammerMetricsVersion}"
+
+    implementation "io.opentelemetry:opentelemetry-sdk:${otelVersion}"
+    implementation "io.opentelemetry:opentelemetry-sdk-metrics:${otelVersion}"
+    implementation "io.opentelemetry:opentelemetry-exporter-otlp:${otelVersion}"
+    implementation "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java17:${otelInstrumentationVersion}"
+
+    testImplementation "org.apache.kafka:kafka-clients:${kafkaVersion}"
+    testImplementation "com.yammer.metrics:metrics-core:${yammerMetricsVersion}"
+    testImplementation platform("org.junit:junit-bom:${junitBomVersion}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation "org.mockito:mockito-core:${mockitoVersion}"
+    testImplementation "org.testcontainers:testcontainers:${testcontainersVersion}"
+    testImplementation "org.testcontainers:testcontainers-junit-jupiter:${testcontainersVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly "org.slf4j:slf4j-simple:${slf4jVersion}"
+}
+
+test {
+    useJUnitPlatform()
+    testLogging { events 'passed', 'failed', 'skipped' }
+    finalizedBy jacocoTestReport
+}
+
+jacoco {
+    toolVersion = '0.8.13'
+}
+
+tasks.named('cyclonedxBom').configure {
+    // SBOM describes the runtime dependency tree the shadow JAR bundles.
+    // Plugin 3.x uses the Provider API; pin the JSON output path explicitly
+    // and skip the XML variant (consumers can re-derive XML from JSON if needed).
+    jsonOutput.set(layout.buildDirectory.file('reports/cyclonedx/bom.json'))
+    xmlOutput.unsetConvention()
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        // XML for tooling (Codecov / SonarQube / IDE plugins), HTML for humans
+        // browsing build artifacts.
+        xml.required = true
+        html.required = true
+    }
+}
+
+jar {
+    enabled = false
+}
+
+shadowJar {
+    archiveClassifier = ''
+    // Reproducible builds: identical source must produce a byte-identical jar.
+    // Strips file mtimes (default: now()) and sorts archive entries by name,
+    // so two builds of the same commit always hash the same.
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    // Relocate every third-party namespace the OTLP exporter pulls in, so the
+    // plugin can't clash with anything else on the Kafka broker classpath.
+    // io.grpc is currently transitive-free (OTel 1.40 uses its own minimal
+    // marshalling) but kept defensively in case a future exporter pulls it in.
+    relocate 'io.opentelemetry', 'dev.monedula.metricsreporter.shaded.opentelemetry'
+    relocate 'io.grpc', 'dev.monedula.metricsreporter.shaded.grpc'
+    relocate 'okhttp3', 'dev.monedula.metricsreporter.shaded.okhttp3'
+    relocate 'okio', 'dev.monedula.metricsreporter.shaded.okio'
+    relocate 'kotlin', 'dev.monedula.metricsreporter.shaded.kotlin'
+    relocate 'org.jetbrains.annotations', 'dev.monedula.metricsreporter.shaded.jetbrains_annotations'
+    relocate 'org.intellij.lang.annotations', 'dev.monedula.metricsreporter.shaded.intellij_annotations'
+    mergeServiceFiles()
+}
+
+// Stable-name copy of the shadow JAR for the quickstart docker-compose mount and the
+// e2e Testcontainers harness, so a version bump doesn't silently break either one
+// (Docker bind-mounts and MountableFile.forHostPath both take literal paths). The
+// versioned JAR is still produced and is what releases publish.
+//
+// Writes to a separate output directory (build/quickstart-libs/) so it doesn't claim
+// ownership over build/libs/ — Gradle 9's strict input/output validation refuses
+// builds where two tasks declare overlapping outputs.
+tasks.register('quickstartShadowJar', Copy) {
+    from shadowJar.archiveFile
+    into layout.buildDirectory.dir('quickstart-libs')
+    rename { 'monedula-metrics-reporter.jar' }
+}
+shadowJar.finalizedBy tasks.named('quickstartShadowJar')
+
+configurations {
+    shadow
+}
+
+artifacts {
+    shadow(shadowJar)
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            // Publish the shadow JAR (with relocated OpenTelemetry + gRPC) as the main artifact
+            // so consumers get a self-contained, classpath-conflict-free plugin. Sources and
+            // javadoc jars are attached automatically by java { withSourcesJar / withJavadocJar }.
+            artifact shadowJar
+            artifact sourcesJar
+            artifact javadocJar
+
+            pom {
+                name = 'monedula-metrics-reporter'
+                description = 'OTLP-native Kafka MetricsReporter bridging Kafka SPI and Yammer registries to an OpenTelemetry collector.'
+                url = 'https://github.com/monedula-dev/monedula-metrics-reporter'
+                inceptionYear = '2025'
+                licenses {
+                    license {
+                        name = 'GNU Affero General Public License v3.0'
+                        url = 'https://www.gnu.org/licenses/agpl-3.0.txt'
+                        distribution = 'repo'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'gkocur'
+                        name = 'gkocur'
+                    }
+                    developer {
+                        id = 'mmatloka'
+                        name = 'Michal Matloka'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/monedula-dev/monedula-metrics-reporter'
+                    connection = 'scm:git:https://github.com/monedula-dev/monedula-metrics-reporter.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/monedula-dev/monedula-metrics-reporter.git'
+                }
+                issueManagement {
+                    system = 'GitHub'
+                    url = 'https://github.com/monedula-dev/monedula-metrics-reporter/issues'
+                }
+            }
+        }
+    }
+    repositories {
+        // Default target: GitHub Packages. Workflow uses GITHUB_TOKEN automatically.
+        // For Maven Central, see the commented block below.
+        maven {
+            name = 'GitHubPackages'
+            url = 'https://maven.pkg.github.com/monedula-dev/monedula-metrics-reporter'
+            credentials {
+                username = findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')
+                password = findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
+            }
+        }
+        // Uncomment and supply credentials (ossrhUsername / ossrhPassword) when the Sonatype
+        // Central namespace 'dev.monedula' is verified. Signing is required for Central.
+        // maven {
+        //     name = 'OSSRH'
+        //     url = version.endsWith('SNAPSHOT')
+        //         ? 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
+        //         : 'https://s01.oss.sonatype.org/service/local/staging/deploy/'
+        //     credentials {
+        //         username = findProperty('ossrhUsername') ?: System.getenv('OSSRH_USERNAME')
+        //         password = findProperty('ossrhPassword') ?: System.getenv('OSSRH_PASSWORD')
+        //     }
+        // }
+    }
+}
+
+signing {
+    // Sign only when a signing key is configured (release flow). Local builds and CI
+    // unit-test runs don't need to sign artifacts.
+    required = { gradle.taskGraph.hasTask('publishMavenJavaPublicationToOSSRHRepository') }
+    def signingKey = findProperty('signingKey') ?: System.getenv('SIGNING_KEY')
+    def signingPassword = findProperty('signingPassword') ?: System.getenv('SIGNING_PASSWORD')
+    if (signingKey && signingPassword) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+    }
+    sign publishing.publications.mavenJava
+}

@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 Monedula contributors
+//
+// Benchmarks subproject. Two source sets:
+//   - src/jmh   : JMH microbenchmarks (driven by me.champeau.jmh)
+//   - src/test  : long-running JUnit tests (soak, timeout-behavior)
+//
+// Both source sets consume the shadow configuration of the root project, so
+// benchmarks exercise the relocated/shaded artifact users actually install.
+
+plugins {
+    id 'java'
+    id 'me.champeau.jmh' version '0.7.3'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // --- JMH source set ---
+    // No Mockito here on purpose: ByteBuddy's proxy adds ~15 us per metricName()
+    // call which dominates nanosecond-scale measurements. KafkaMetric is
+    // constructed directly via its public 5-arg constructor. See
+    // CONTRIBUTING.md "Writing tests" and MetricChangeBenchmark.java.
+    jmh project(path: ':', configuration: 'shadow')
+    jmh "org.apache.kafka:kafka-clients:${kafkaVersion}"
+
+    // --- test source set (soak + timeout) ---
+    // No Mockito here for the same reason: per-mock invocation recording leaks
+    // unbounded memory during multi-minute soak runs and OOMs the test JVM.
+    testImplementation project(path: ':', configuration: 'shadow')
+    testImplementation "org.apache.kafka:kafka-clients:${kafkaVersion}"
+    testImplementation platform("org.junit:junit-bom:${junitBomVersion}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation "org.testcontainers:testcontainers:${testcontainersVersion}"
+    testImplementation "org.testcontainers:testcontainers-junit-jupiter:${testcontainersVersion}"
+    testImplementation "org.testcontainers:testcontainers-toxiproxy:${testcontainersVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly "org.slf4j:slf4j-simple:${slf4jVersion}"
+}
+
+jmh {
+    iterations = 10
+    warmupIterations = 5
+    fork = 1
+    timeOnIteration = '1s'
+    warmup = '1s'
+    resultFormat = 'JSON'
+    resultsFile = layout.buildDirectory.file('reports/jmh/results.json')
+    // The plugin's default human-readable output also lands in
+    // benchmarks/build/reports/jmh/results.txt for quick inspection.
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'failed', 'skipped'
+        showStandardStreams = true
+        exceptionFormat = 'full'
+    }
+}

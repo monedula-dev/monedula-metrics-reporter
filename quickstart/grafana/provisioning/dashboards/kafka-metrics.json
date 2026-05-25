@@ -1,0 +1,1751 @@
+{
+  "id": null,
+  "uid": "kafka-otlp",
+  "title": "Kafka OTLP Metrics",
+  "tags": [
+    "kafka",
+    "otlp"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "cluster_id",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(kafka_controller_kafkacontroller_activecontrollercount, kafka_cluster_id)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "label": "Cluster"
+      },
+      {
+        "name": "node_id",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(kafka_controller_kafkacontroller_activecontrollercount{kafka_cluster_id=~\"$cluster_id\"}, kafka_node_id)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "label": "Node"
+      },
+      {
+        "name": "topic",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(kafka_server_brokertopicmetrics_bytesinpersec_total{topic!=\"\"}, topic)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "label": "Topic"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Cluster Health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Active Controller Count",
+      "description": "Should be exactly 1 across the cluster. Anything else indicates a controller election problem.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(kafka_controller_kafkacontroller_activecontrollercount{kafka_cluster_id=~\"$cluster_id\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Offline Partitions",
+      "description": "Partitions without an active leader. Must be 0 for a healthy cluster.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(kafka_controller_kafkacontroller_offlinepartitionscount{kafka_cluster_id=~\"$cluster_id\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Under-Replicated Partitions (broker-wide)",
+      "description": "Broker-wide aggregate of partitions where ISR < replication factor. Must be 0.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(kafka_server_replicamanager_underreplicatedpartitions{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Active Brokers",
+      "description": "Number of active brokers known to the controller.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "max(kafka_controller_kafkacontroller_activebrokercount{kafka_cluster_id=~\"$cluster_id\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Under-Replicated Partitions by Topic",
+      "description": "Per-topic count of currently under-replicated partitions (only series with > 0 are shown).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (topic) (kafka_cluster_partition_underreplicated{kafka_cluster_id=~\"$cluster_id\"})",
+          "legendFormat": "{{topic}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "ISR Shrinks / Expands Rate",
+      "description": "Rate of ISR membership churn. Spikes are usually correlated with broker pressure or network issues.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_server_replicamanager_isrshrinkspersec_total{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\"}[5m]))",
+          "legendFormat": "isr shrinks/s",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "sum(rate(kafka_server_replicamanager_isrexpandspersec_total{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\"}[5m]))",
+          "legendFormat": "isr expands/s",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Throughput",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Bytes In / Out per Broker",
+      "description": "Broker-aggregate bytes ingested and served (only series without topic label).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (kafka_node_id) (rate(kafka_server_brokertopicmetrics_bytesinpersec_total{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\", topic=\"\"}[5m]))",
+          "legendFormat": "node {{kafka_node_id}} in",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "sum by (kafka_node_id) (rate(kafka_server_brokertopicmetrics_bytesoutpersec_total{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\", topic=\"\"}[5m]))",
+          "legendFormat": "node {{kafka_node_id}} out",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Messages In Per Second",
+      "description": "Records ingested per second, summed by broker (broker-level aggregate, no per-topic).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (kafka_node_id) (rate(kafka_server_brokertopicmetrics_messagesinpersec_total{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\", topic=\"\"}[5m]))",
+          "legendFormat": "node {{kafka_node_id}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Bytes In / Out by Topic",
+      "description": "Per-topic byte rates. Filter via the $topic dashboard variable.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesinpersec_total{kafka_cluster_id=~\"$cluster_id\", topic=~\"$topic\", topic!=\"\"}[5m]))",
+          "legendFormat": "{{topic}} in",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesoutpersec_total{kafka_cluster_id=~\"$cluster_id\", topic=~\"$topic\", topic!=\"\"}[5m]))",
+          "legendFormat": "{{topic}} out",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Request Latency & Saturation",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Request Total Time p99 by API",
+      "description": "p99 of total time spent serving each request type (Produce, Fetch, Metadata, ...).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "kafka_network_requestmetrics_totaltimems{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\", quantile=\"0.99\"}",
+          "legendFormat": "{{request}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Produce Request Total Time (p50 / p95 / p99)",
+      "description": "Quantile breakdown for the Produce path.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "kafka_network_requestmetrics_totaltimems{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\", request=\"Produce\", quantile=\"0.5\"}",
+          "legendFormat": "p50",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "kafka_network_requestmetrics_totaltimems{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\", request=\"Produce\", quantile=\"0.95\"}",
+          "legendFormat": "p95",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "kafka_network_requestmetrics_totaltimems{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\", request=\"Produce\", quantile=\"0.99\"}",
+          "legendFormat": "p99",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "gauge",
+      "title": "Request Handler Avg Idle %",
+      "description": "Fraction of time request handler threads are idle. Exposed as a Yammer Meter cumulative-nanoseconds counter, so we rate and divide by 1e9 to recover the 0-1 ratio. Below 20% indicates saturation.",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 41
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "avg(rate(kafka_server_kafkarequesthandlerpool_requesthandleravgidlepercent_total{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\"}[5m])) / 1e9",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.2
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 13,
+      "type": "gauge",
+      "title": "Network Processor Avg Idle %",
+      "description": "Fraction of time network threads are idle (gauge 0-1). Below 20% indicates the socket pollers are saturated.",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 41
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "avg(kafka_network_socketserver_networkprocessoravgidlepercent{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.2
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Request Queue Size",
+      "description": "Inflight requests waiting to be picked up by the handler pool. Sustained growth = handler saturation.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "kafka_network_requestchannel_requestqueuesize{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\"}",
+          "legendFormat": "node {{kafka_node_id}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "kafka_network_requestchannel_responsequeuesize{kafka_cluster_id=~\"$cluster_id\", kafka_node_id=~\"$node_id\"}",
+          "legendFormat": "node {{kafka_node_id}} (response queue)",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 400,
+      "type": "row",
+      "title": "JVM",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Heap Memory",
+      "description": "Heap pool used (stacked) vs committed and limit (lines).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (jvm_memory_pool_name) (jvm_memory_used_bytes{jvm_memory_type=\"heap\", service_name=\"kafka-otlp-metric-reporter\"})",
+          "legendFormat": "used: {{jvm_memory_pool_name}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "sum(jvm_memory_committed_bytes{jvm_memory_type=\"heap\", service_name=\"kafka-otlp-metric-reporter\"})",
+          "legendFormat": "committed",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "sum(jvm_memory_limit_bytes{jvm_memory_type=\"heap\", service_name=\"kafka-otlp-metric-reporter\"})",
+          "legendFormat": "limit",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 30,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(committed|limit)$"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "mode": "none"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "GC Duration (rate of sum)",
+      "description": "Rate of cumulative GC time per second, broken down by collector. jvm_gc_duration_seconds is exposed as a histogram; we rate _sum to get the fraction of wall-clock spent in GC.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (jvm_gc_name) (rate(jvm_gc_duration_seconds_sum{service_name=\"kafka-otlp-metric-reporter\"}[5m]))",
+          "legendFormat": "{{jvm_gc_name}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Threads",
+      "description": "Live JVM thread count.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "max(jvm_thread_count{service_name=\"kafka-otlp-metric-reporter\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Classes Loaded (currently)",
+      "description": "Snapshot of currently loaded classes (jvm_class_count, gauge).",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "max(jvm_class_count{service_name=\"kafka-otlp-metric-reporter\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "JVM CPU Utilization",
+      "description": "Recent CPU utilization ratio (0-1) of the JVM process.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 58
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "jvm_cpu_recent_utilization_ratio{service_name=\"kafka-otlp-metric-reporter\"}",
+          "legendFormat": "cpu ratio",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 500,
+      "type": "row",
+      "title": "Per-Topic Drill-down",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 66
+      },
+      "panels": []
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Topic Bytes In / Out",
+      "description": "Per-topic byte rates (filtered by $topic). Same source as the cluster-wide panel but split by topic.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 67
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesinpersec_total{kafka_cluster_id=~\"$cluster_id\", topic=~\"$topic\", topic!=\"\"}[5m]))",
+          "legendFormat": "{{topic}} in",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesoutpersec_total{kafka_cluster_id=~\"$cluster_id\", topic=~\"$topic\", topic!=\"\"}[5m]))",
+          "legendFormat": "{{topic}} out",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Topic Messages In",
+      "description": "Records ingested per second per topic.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 67
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_messagesinpersec_total{kafka_cluster_id=~\"$cluster_id\", topic=~\"$topic\", topic!=\"\"}[5m]))",
+          "legendFormat": "{{topic}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "table",
+      "title": "Under-Replicated Partitions (per partition)",
+      "description": "Currently under-replicated partitions. Empty table means all healthy.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 75
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "kafka_cluster_partition_underreplicated{kafka_cluster_id=~\"$cluster_id\", topic=~\"$topic\"} > 0",
+          "refId": "A",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "underreplicated"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "exported_job": true,
+              "instance": true,
+              "job": true,
+              "otel_scope_name": true,
+              "telemetry_sdk_language": true,
+              "telemetry_sdk_name": true,
+              "telemetry_sdk_version": true,
+              "service_name": true
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Log End Offset per Partition",
+      "description": "kafka_log_log_logendoffset by topic / partition. Use to spot lagging or stuck partitions.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 75
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "kafka_log_log_logendoffset{kafka_cluster_id=~\"$cluster_id\", topic=~\"$topic\", topic!=\"\"}",
+          "legendFormat": "{{topic}}/{{partition}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 600,
+      "type": "row",
+      "title": "Reporter Health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 83
+      },
+      "panels": []
+    },
+    {
+      "id": 601,
+      "type": "timeseries",
+      "title": "Reporter export success rate",
+      "description": "Per-second rate of successful OTLP exports from this plugin. Counts the reporter's own ticks; should track 1 / interval.ms when healthy.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 84
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(monedula_reporter_export_success_total{kafka_cluster_id=~\"$cluster_id\",kafka_node_id=~\"$node_id\"}[5m])",
+          "legendFormat": "{{kafka_node_id}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "id": 602,
+      "type": "timeseries",
+      "title": "Reporter export failure rate",
+      "description": "Per-second rate of failed OTLP exports (timeout, refused, mapping error). Sustained > 0 means the collector is unreachable or backpressured.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 84
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(monedula_reporter_export_failure_total{kafka_cluster_id=~\"$cluster_id\",kafka_node_id=~\"$node_id\"}[5m])",
+          "legendFormat": "{{kafka_node_id}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "id": 603,
+      "type": "timeseries",
+      "title": "Reporter last-tick duration (ms)",
+      "description": "Wall-clock time the previous export tick took. Values approaching otlp.metric.reporter.timeout.ms mean upcoming batches will time out and drop.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 84
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "monedula_reporter_export_duration_ms{kafka_cluster_id=~\"$cluster_id\",kafka_node_id=~\"$node_id\"}",
+          "legendFormat": "{{kafka_node_id}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      }
+    }
+  ]
+}

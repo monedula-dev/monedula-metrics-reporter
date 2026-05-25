@@ -1,0 +1,425 @@
+{
+  "id": null,
+  "uid": "kafka-otlp-consumption",
+  "title": "Kafka Consumption",
+  "tags": ["kafka", "otlp", "consumption"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "topic",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(kafka_server_brokertopicmetrics_bytesinpersec_total{topic!=\"\"}, topic)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "label": "Topic"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Cluster Consumption Overview",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Bytes Out/sec",
+      "description": "Cluster-wide bytes served to consumers (and replication).",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_server_brokertopicmetrics_bytesoutpersec_total{topic=\"\"}[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Fetch Request Rate",
+      "description": "Sum of consumer and follower fetch requests across the cluster.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_network_requestmetrics_requestspersec_total{request=~\"Fetch|FetchConsumer|FetchFollower\"}[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Active Connections",
+      "description": "Sum of socket-server connection counts across listeners and processors.",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(kafka_server_socket_server_metrics_connection_count)",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Max Replica Fetcher Lag",
+      "description": "Maximum replica fetcher lag across all nodes (records the follower is behind the leader). Healthy clusters keep this near 0.",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "max(kafka_server_replicafetchermanager_maxlag)",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 1000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Throughput Timeseries",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Bytes Out by Topic",
+      "description": "Per-topic outbound bytes/sec (consumers + replication).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (topic) (rate(kafka_server_brokertopicmetrics_bytesoutpersec_total{topic=~\"$topic\",topic!=\"\"}[5m]))",
+          "legendFormat": "{{topic}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Fetch Rate by Type",
+      "description": "Per-request-type fetch rate (Fetch, FetchConsumer, FetchFollower).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (request) (rate(kafka_network_requestmetrics_requestspersec_total{request=~\"Fetch.*\"}[5m]))",
+          "legendFormat": "{{request}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Fetch Latency",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Fetch Latency Quantiles (broker-wide)",
+      "description": "Average across brokers of p50/p95/p99 total time for FetchConsumer requests.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "avg(kafka_network_requestmetrics_totaltimems{request=\"FetchConsumer\",quantile=\"0.5\"})",
+          "legendFormat": "p50",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "avg(kafka_network_requestmetrics_totaltimems{request=\"FetchConsumer\",quantile=\"0.95\"})",
+          "legendFormat": "p95",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "avg(kafka_network_requestmetrics_totaltimems{request=\"FetchConsumer\",quantile=\"0.99\"})",
+          "legendFormat": "p99",
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Fetch Latency per node (p99)",
+      "description": "p99 total time of FetchConsumer requests, per broker node.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kafka_network_requestmetrics_totaltimems{request=\"FetchConsumer\",quantile=\"0.99\"}",
+          "legendFormat": "node {{kafka_node_id}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 400,
+      "type": "row",
+      "title": "Replica Fetcher Health",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Max Replica Fetcher Lag over time",
+      "description": "Per-node maximum replica fetcher lag (records the follower is behind the leader).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "max by (kafka_node_id) (kafka_server_replicafetchermanager_maxlag)",
+          "legendFormat": "node {{kafka_node_id}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Replica Fetcher Min Fetch Rate",
+      "description": "Minimum fetch rate observed across replica fetcher threads, per node. A drop towards 0 while traffic continues can indicate a stuck fetcher.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "min by (kafka_node_id) (kafka_server_replicafetchermanager_minfetchrate)",
+          "legendFormat": "node {{kafka_node_id}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 500,
+      "type": "row",
+      "title": "Connections & Errors",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Connection Count over time",
+      "description": "Socket-server connection count broken down by listener.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (listener) (kafka_server_socket_server_metrics_connection_count)",
+          "legendFormat": "{{listener}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Failed Fetch Requests",
+      "description": "Rate of failed fetch requests per broker node. Should be 0 in a healthy cluster.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (kafka_node_id) (rate(kafka_server_brokertopicmetrics_failedfetchrequestspersec_total[5m]))",
+          "legendFormat": "node {{kafka_node_id}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    }
+  ]
+}

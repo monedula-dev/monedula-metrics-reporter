@@ -1,0 +1,46 @@
+monedula-metrics-reporter
+Copyright (C) 2025 Monedula contributors
+
+This product is licensed under the GNU Affero General Public License v3.0
+(see LICENSE).
+
+The shadow JAR distributed by this project bundles relocated copies of the
+following third-party libraries, which are themselves distributed under the
+Apache License, Version 2.0:
+
+  * OpenTelemetry Java (https://github.com/open-telemetry/opentelemetry-java)
+      - opentelemetry-sdk
+      - opentelemetry-sdk-metrics
+      - opentelemetry-exporter-otlp
+      - opentelemetry-runtime-telemetry-java17
+    Relocated to: dev.monedula.metricsreporter.shaded.opentelemetry.*
+
+  * gRPC Java (https://github.com/grpc/grpc-java)
+    Relocated to: dev.monedula.metricsreporter.shaded.grpc.*
+
+  * OkHttp (https://github.com/square/okhttp) and
+    Okio  (https://github.com/square/okio)
+    Pulled transitively by the OTLP HTTP exporter.
+    Relocated to: dev.monedula.metricsreporter.shaded.okhttp3.*
+                  dev.monedula.metricsreporter.shaded.okio.*
+
+  * Kotlin standard library (https://github.com/JetBrains/kotlin)
+    Pulled transitively by OkHttp.
+    Relocated to: dev.monedula.metricsreporter.shaded.kotlin.*
+
+  * JetBrains / IntelliJ Annotations
+    (https://github.com/JetBrains/java-annotations)
+    Pulled transitively by the Kotlin standard library.
+    Relocated to: dev.monedula.metricsreporter.shaded.jetbrains_annotations.*
+                  dev.monedula.metricsreporter.shaded.intellij_annotations.*
+
+Each of those libraries retains the copyright of its respective authors. The
+relocation of their packages is purely a classpath-conflict-avoidance measure
+required for the plugin to load alongside Kafka's own dependency set; it does
+not modify their source.
+
+Apache License 2.0 text: https://www.apache.org/licenses/LICENSE-2.0
+
+The Apache Kafka client API and the legacy Yammer/Coda Hale metrics-core
+registry that this plugin integrates against are NOT bundled — they are
+expected to be supplied by the host Kafka broker or client process.

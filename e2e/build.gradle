@@ -1,0 +1,47 @@
+plugins {
+    id 'java'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation project(path: ':', configuration: 'shadow')
+    testImplementation "org.apache.kafka:kafka-clients:${kafkaVersion}"
+    testImplementation platform("org.junit:junit-bom:${junitBomVersion}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation "org.testcontainers:testcontainers:${testcontainersVersion}"
+    testImplementation "org.testcontainers:testcontainers-junit-jupiter:${testcontainersVersion}"
+    testImplementation "org.testcontainers:testcontainers-kafka:${testcontainersVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Bind SLF4J at test runtime so Testcontainers' Slf4jLogConsumer can stream
+    // Kafka / OTel collector / Prometheus container logs to the test output —
+    // without this the consumers fall through to NOP and CI failures have no
+    // container-side diagnostics.
+    testRuntimeOnly "org.slf4j:slf4j-simple:${slf4jVersion}"
+}
+
+// The e2e test bind-mounts ../build/quickstart-libs/monedula-metrics-reporter.jar
+// into the Kafka container via Testcontainers' MountableFile.forHostPath, which is a
+// runtime filesystem read invisible to Gradle's input/output graph. Declare the
+// dependency explicitly so the stable-name JAR is on disk before the test runs.
+tasks.named('test') {
+    dependsOn ':quickstartShadowJar'
+}
+
+test {
+    useJUnitPlatform()
+    // Forward container log lines (from the SLF4J-wired log consumers) and
+    // test-side System.out/err to the Gradle console + the captured CI logs.
+    testLogging {
+        events 'failed', 'skipped'
+        showStandardStreams = true
+        exceptionFormat = 'full'
+    }
+}

@@ -1,0 +1,436 @@
+{
+  "id": null,
+  "uid": "kafka-otlp-topic-details",
+  "title": "Kafka Topic Details",
+  "tags": ["kafka", "otlp", "topic"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "topic",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(kafka_server_brokertopicmetrics_bytesinpersec_total{topic!=\"\"}, topic)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "label": "Topic"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Topic Overview",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Bytes In/sec",
+      "description": "Topic ingestion throughput.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_server_brokertopicmetrics_bytesinpersec_total{topic=\"$topic\"}[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Bytes Out/sec",
+      "description": "Topic outbound throughput (consumers + replication).",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_server_brokertopicmetrics_bytesoutpersec_total{topic=\"$topic\"}[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Messages In/sec",
+      "description": "Topic message rate.",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_server_brokertopicmetrics_messagesinpersec_total{topic=\"$topic\"}[5m]))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Partition Count",
+      "description": "Number of partitions in this topic (derived from kafka_log_log_logendoffset series count).",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(count by (partition) (kafka_log_log_logendoffset{topic=\"$topic\"}))",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Throughput Trend",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Topic Throughput In / Out",
+      "description": "Bytes/sec in (positive) and out (rendered negative for clarity).",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_server_brokertopicmetrics_bytesinpersec_total{topic=\"$topic\"}[5m]))",
+          "legendFormat": "in",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "expr": "-1 * sum(rate(kafka_server_brokertopicmetrics_bytesoutpersec_total{topic=\"$topic\"}[5m]))",
+          "legendFormat": "out",
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Per-Partition Details",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Per-Partition Log End Offset",
+      "description": "Latest offset of each partition. Slope indicates write rate per partition.",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kafka_log_log_logendoffset{topic=\"$topic\"}",
+          "legendFormat": "partition {{partition}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Per-Partition Leader",
+      "description": "Which broker node hosts the leader replica for each partition (derived from kafka_log_log_logendoffset, which is only published by the leader).",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kafka_log_log_logendoffset{topic=\"$topic\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "align": "auto" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Log End Offset" }] }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "partition", "desc": false }]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "exported_job": true,
+              "instance": true,
+              "job": true,
+              "kafka_cluster_id": true,
+              "otel_scope_name": true,
+              "service_name": true,
+              "telemetry_sdk_language": true,
+              "telemetry_sdk_name": true,
+              "telemetry_sdk_version": true,
+              "topic": true
+            },
+            "indexByName": {},
+            "renameByName": { "kafka_node_id": "Leader Node" }
+          }
+        }
+      ]
+    },
+    {
+      "id": 400,
+      "type": "row",
+      "title": "Replication Status",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Per-Partition Under-Replicated",
+      "description": "Partitions where ISR < replication factor. Empty in a healthy cluster.",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kafka_cluster_partition_underreplicated{topic=\"$topic\"} > 0",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "align": "auto" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "partition", "desc": false }]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "exported_job": true,
+              "instance": true,
+              "job": true,
+              "kafka_cluster_id": true,
+              "otel_scope_name": true,
+              "service_name": true,
+              "telemetry_sdk_language": true,
+              "telemetry_sdk_name": true,
+              "telemetry_sdk_version": true,
+              "topic": true
+            },
+            "indexByName": {},
+            "renameByName": { "Value": "Under-Replicated" }
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Per-Partition ISR Size",
+      "description": "In-Sync Replica count for each partition. Should equal replication factor.",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kafka_cluster_partition_insyncreplicascount{topic=\"$topic\"}",
+          "legendFormat": "partition {{partition}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "min"] }
+      }
+    },
+    {
+      "id": 500,
+      "type": "row",
+      "title": "Log Storage",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Log Size per Partition",
+      "description": "On-disk size of each partition (bytes).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 37 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kafka_log_log_size{topic=\"$topic\"}",
+          "legendFormat": "partition {{partition}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Log Segment Count per Partition",
+      "description": "Number of log segments per partition. Growing without bound may indicate retention not running.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kafka_log_log_numlogsegments{topic=\"$topic\"}",
+          "legendFormat": "partition {{partition}}",
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+      }
+    }
+  ]
+}

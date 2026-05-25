@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s
+
+# Pull metrics from the OTel collector's prometheus exporter (port 8889).
+# This preserves # TYPE / # HELP comments, so Prometheus's metric explorer
+# reports gauge / counter / histogram instead of "unknown".
+scrape_configs:
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']

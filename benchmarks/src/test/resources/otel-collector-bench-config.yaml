@@ -1,0 +1,22 @@
+# OTel collector config for the export-timeout behavior test.
+# Accepts OTLP gRPC on 4317 and logs received metrics via the debug exporter.
+# The test injects latency in front of this collector with Toxiproxy so the
+# reporter's export calls time out before they ever reach this debug log.
+# Any metric line that DOES appear in the debug exporter's output is a
+# regression - it means the reporter delivered a batch past its timeout.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [debug]

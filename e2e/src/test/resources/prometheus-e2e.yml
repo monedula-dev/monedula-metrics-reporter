@@ -1,0 +1,10 @@
+global:
+  # Tight scrape interval so the E2E test sees data quickly.
+  scrape_interval: 2s
+
+# Scrape the OTel collector's prometheus exporter so metric type metadata
+# (gauge / counter / histogram) is preserved end-to-end.
+scrape_configs:
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']

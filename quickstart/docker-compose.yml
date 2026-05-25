@@ -1,0 +1,117 @@
+services:
+  # --- Kafka: 3-broker KRaft cluster (combined broker + controller roles) ---
+  # All three nodes form the controller quorum (1@kafka1:9093,2@kafka2:9093,
+  # 3@kafka3:9093) and the broker plane. Replication factor 3 with min ISR 2
+  # is set explicitly for __consumer_offsets and the transaction log so they
+  # come up cleanly — the Kafka defaults assume a multi-broker cluster.
+  kafka1:
+    image: apache/kafka:4.2.0
+    hostname: kafka1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092,EXTERNAL://localhost:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_METRIC_REPORTERS: dev.monedula.metricsreporter.OtlpMetricReporter
+      KAFKA_OTLP_METRIC_REPORTER_ENDPOINT: http://otel-collector:4317
+      KAFKA_OTLP_METRIC_REPORTER_TRANSPORT: grpc
+      KAFKA_OTLP_METRIC_REPORTER_INTERVAL_MS: 15000
+    volumes:
+      - ../build/quickstart-libs/monedula-metrics-reporter.jar:/opt/kafka/libs/monedula-metrics-reporter.jar
+    ports:
+      - "9092:19092"
+    depends_on:
+      - otel-collector
+
+  kafka2:
+    image: apache/kafka:4.2.0
+    hostname: kafka2
+    environment:
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092,EXTERNAL://localhost:9094
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_METRIC_REPORTERS: dev.monedula.metricsreporter.OtlpMetricReporter
+      KAFKA_OTLP_METRIC_REPORTER_ENDPOINT: http://otel-collector:4317
+      KAFKA_OTLP_METRIC_REPORTER_TRANSPORT: grpc
+      KAFKA_OTLP_METRIC_REPORTER_INTERVAL_MS: 15000
+    volumes:
+      - ../build/quickstart-libs/monedula-metrics-reporter.jar:/opt/kafka/libs/monedula-metrics-reporter.jar
+    ports:
+      - "9094:19092"
+    depends_on:
+      - otel-collector
+
+  kafka3:
+    image: apache/kafka:4.2.0
+    hostname: kafka3
+    environment:
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092,EXTERNAL://localhost:9096
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_METRIC_REPORTERS: dev.monedula.metricsreporter.OtlpMetricReporter
+      KAFKA_OTLP_METRIC_REPORTER_ENDPOINT: http://otel-collector:4317
+      KAFKA_OTLP_METRIC_REPORTER_TRANSPORT: grpc
+      KAFKA_OTLP_METRIC_REPORTER_INTERVAL_MS: 15000
+    volumes:
+      - ../build/quickstart-libs/monedula-metrics-reporter.jar:/opt/kafka/libs/monedula-metrics-reporter.jar
+    ports:
+      - "9096:19092"
+    depends_on:
+      - otel-collector
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.152.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      # /metrics endpoint scraped by Prometheus (pull-based pipeline).
+      - "8889:8889"
+
+  prometheus:
+    image: prom/prometheus:v3.11.3
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+
+  grafana:
+    image: grafana/grafana:13.0.1
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
