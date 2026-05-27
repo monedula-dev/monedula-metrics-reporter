@@ -1,3 +1,36 @@
+// The nmcp settings plugin applies com.gradleup.nmcp to every project in the
+// build (root, :e2e, :benchmarks) and com.gradleup.nmcp.aggregation to the root.
+// Only the root project has a Maven publication, so only its artifacts end up in
+// the deployment bundle. Run:
+//
+//   ./gradlew publishAggregationToCentralPortal
+//
+// Required GitHub secrets (Settings → Secrets → Actions):
+//   MAVEN_CENTRAL_USERNAME  – token "username" from Central Portal → Account → Generate User Token
+//   MAVEN_CENTRAL_PASSWORD  – token "password" from Central Portal → Account → Generate User Token
+//   SIGNING_KEY             – ASCII-armored GPG private key
+//                              (gpg --armor --export-secret-keys <KEY_ID>)
+//   SIGNING_PASSWORD        – GPG key passphrase
+//
+// One-time namespace setup:
+//   Register the 'dev.monedula' namespace at https://central.sonatype.com and verify ownership.
+//
+// publicationType = 'AUTOMATIC' releases once Sonatype's validation passes.
+// Change to 'USER_MANAGED' to review the deployment in the Portal UI first.
+plugins {
+    id 'com.gradleup.nmcp.settings' version '1.5.0'
+}
+
+nmcpSettings {
+    centralPortal {
+        username = System.getenv('MAVEN_CENTRAL_USERNAME')
+                    ?: providers.gradleProperty('mavenCentralUsername').orNull
+        password = System.getenv('MAVEN_CENTRAL_PASSWORD')
+                    ?: providers.gradleProperty('mavenCentralPassword').orNull
+        publishingType = 'AUTOMATIC'
+    }
+}
+
 rootProject.name = 'monedula-metrics-reporter'
 include 'e2e'
 include 'benchmarks'

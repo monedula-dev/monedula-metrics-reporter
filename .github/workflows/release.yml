@@ -55,6 +55,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew publishMavenJavaPublicationToGitHubPackagesRepository -PreleaseVersion=${{ steps.version.outputs.version }} --no-daemon --stacktrace
 
+      # Publishes to the new Sonatype Central Portal (https://central.sonatype.com).
+      # The nmcp plugin bundles artifacts + PGP signatures into a deployment ZIP and
+      # uploads it via the Central Publisher REST API.
+      #
+      # Prerequisites (one-time setup):
+      #   1. Register the 'dev.monedula' namespace in the Central Portal and verify ownership.
+      #   2. Generate a user token (Central Portal → Account → Generate User Token).
+      #   3. Add four repository secrets:
+      #        MAVEN_CENTRAL_USERNAME  – token "username" field
+      #        MAVEN_CENTRAL_PASSWORD  – token "password" field
+      #        SIGNING_KEY             – ASCII-armored GPG private key
+      #                                  (gpg --armor --export-secret-keys <KEY_ID>)
+      #        SIGNING_PASSWORD        – GPG key passphrase
+      - name: Publish to Maven Central
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: ./gradlew publishAggregationToCentralPortal -PreleaseVersion=${{ steps.version.outputs.version }} --no-daemon --stacktrace
+
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 

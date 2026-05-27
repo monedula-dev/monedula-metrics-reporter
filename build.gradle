@@ -190,8 +190,8 @@ publishing {
         }
     }
     repositories {
-        // Default target: GitHub Packages. Workflow uses GITHUB_TOKEN automatically.
-        // For Maven Central, see the commented block below.
+        // GitHub Packages target. Workflow uses GITHUB_TOKEN automatically.
+        // Maven Central is handled by the nmcp settings plugin (settings.gradle).
         maven {
             name = 'GitHubPackages'
             url = 'https://maven.pkg.github.com/monedula-dev/monedula-metrics-reporter'
@@ -200,27 +200,18 @@ publishing {
                 password = findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
             }
         }
-        // Uncomment and supply credentials (ossrhUsername / ossrhPassword) when the Sonatype
-        // Central namespace 'dev.monedula' is verified. Signing is required for Central.
-        // maven {
-        //     name = 'OSSRH'
-        //     url = version.endsWith('SNAPSHOT')
-        //         ? 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
-        //         : 'https://s01.oss.sonatype.org/service/local/staging/deploy/'
-        //     credentials {
-        //         username = findProperty('ossrhUsername') ?: System.getenv('OSSRH_USERNAME')
-        //         password = findProperty('ossrhPassword') ?: System.getenv('OSSRH_PASSWORD')
-        //     }
-        // }
     }
 }
 
 signing {
-    // Sign only when a signing key is configured (release flow). Local builds and CI
-    // unit-test runs don't need to sign artifacts.
-    required = { gradle.taskGraph.hasTask('publishMavenJavaPublicationToOSSRHRepository') }
+    // Sign only when a signing key is provided — release flow. Local builds and CI
+    // unit-test runs that don't supply a key skip signing gracefully.
     def signingKey = findProperty('signingKey') ?: System.getenv('SIGNING_KEY')
     def signingPassword = findProperty('signingPassword') ?: System.getenv('SIGNING_PASSWORD')
+    required = {
+        signingKey != null && signingPassword != null
+            && gradle.taskGraph.hasTask('publishAggregationToCentralPortal')
+    }
     if (signingKey && signingPassword) {
         useInMemoryPgpKeys(signingKey, signingPassword)
     }
