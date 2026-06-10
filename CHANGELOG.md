@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The default OTLP endpoint now follows the configured transport: gRPC defaults
+  to `http://localhost:4317`, HTTP to `http://localhost:4318` (previously HTTP
+  also defaulted to the gRPC :4317 port, producing an unreachable endpoint).
+
+### Fixed
+
+- The HTTP endpoint metrics-path normalization now preserves any query string or
+  fragment instead of clobbering it via string concatenation.
+
 ### Added
 
 - Initial release of the OTLP-native Kafka `MetricsReporter` plugin
