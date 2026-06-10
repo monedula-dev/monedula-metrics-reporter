@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Export no longer stops permanently if a tick throws an `Error` (e.g. a
+  first-tick `NoClassDefFoundError`): the scheduled task now catches `Throwable`,
+  logs, and retries on the next interval instead of being silently cancelled by
+  `scheduleAtFixedRate`.
+
 ### Added
 
 - Initial release of the OTLP-native Kafka `MetricsReporter` plugin
