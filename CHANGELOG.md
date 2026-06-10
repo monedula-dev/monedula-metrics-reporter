@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Allow-list patterns are evaluated independently rather than folded into one
+  regex alternation, so a backreference in one pattern can no longer be corrupted
+  by capture-group renumbering across patterns.
+
 ### Added
 
 - Initial release of the OTLP-native Kafka `MetricsReporter` plugin
