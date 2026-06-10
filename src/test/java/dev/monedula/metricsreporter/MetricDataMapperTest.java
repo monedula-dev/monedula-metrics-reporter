@@ -5,6 +5,7 @@ package dev.monedula.metricsreporter;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
+import io.opentelemetry.sdk.metrics.data.AggregationTemporality;
 import io.opentelemetry.sdk.metrics.data.MetricData;
 import io.opentelemetry.sdk.metrics.data.MetricDataType;
 import java.util.List;
@@ -101,10 +102,51 @@ class MetricDataMapperTest {
     @Test
     void maps_list_of_metrics() {
         var mapper = new MetricDataMapper(Map.of());
-        var metrics = List.of(
-                metric("producer-metrics", "record-send-rate", Map.of(), 1.0),
-                metric("producer-metrics", "record-error-rate", Map.of(), 2.0));
-        assertEquals(2, mapper.mapAll(metrics).size());
+        var samples = List.of(
+                new MetricRegistry.Sample(metric("producer-metrics", "record-send-rate", Map.of(), 1.0), 1.0),
+                new MetricRegistry.Sample(metric("producer-metrics", "record-error-rate", Map.of(), 2.0), 2.0));
+        assertEquals(2, mapper.mapAll(samples).size());
+    }
+
+    @Test
+    void total_suffixed_metric_maps_to_monotonic_cumulative_sum() {
+        var mapper = new MetricDataMapper(Map.of());
+        KafkaMetric m = metric("producer-metrics", "record-send-total", Map.of(), 42.0);
+        MetricData data = mapper.map(m);
+        assertEquals(MetricDataType.DOUBLE_SUM, data.getType());
+        assertTrue(data.getDoubleSumData().isMonotonic());
+        assertEquals(AggregationTemporality.CUMULATIVE, data.getDoubleSumData().getAggregationTemporality());
+        assertEquals(42.0, data.getDoubleSumData().getPoints().iterator().next().getValue(), 0.001);
+    }
+
+    @Test
+    void non_total_metric_stays_a_gauge() {
+        var mapper = new MetricDataMapper(Map.of());
+        KafkaMetric m = metric("producer-metrics", "record-send-rate", Map.of(), 1.0);
+        assertEquals(MetricDataType.DOUBLE_GAUGE, mapper.map(m).getType());
+    }
+
+    @Test
+    void cumulative_sum_uses_supplied_start_epoch() {
+        long startEpoch = 123_000_000_000L;
+        var mapper = new MetricDataMapper("", Map.of(), startEpoch);
+        KafkaMetric m = metric("producer-metrics", "record-send-total", Map.of(), 7.0);
+        MetricData data = mapper.map(m);
+        assertEquals(
+                startEpoch,
+                data.getDoubleSumData().getPoints().iterator().next().getStartEpochNanos());
+    }
+
+    @Test
+    void rendering_cache_is_pruned_to_the_live_snapshot() {
+        var mapper = new MetricDataMapper(Map.of());
+        KafkaMetric a = metric("producer-metrics", "record-send-rate", Map.of(), 1.0);
+        KafkaMetric b = metric("producer-metrics", "record-error-rate", Map.of(), 2.0);
+        // First tick sees both metrics.
+        mapper.mapAll(List.of(new MetricRegistry.Sample(a, 1.0), new MetricRegistry.Sample(b, 2.0)));
+        // Second tick: 'b' is gone. Its cached rendering must not linger.
+        mapper.mapAll(List.of(new MetricRegistry.Sample(a, 1.0)));
+        assertEquals(1, mapper.renderingCacheSize(), "stale rendering for removed metric was not pruned");
     }
 
     @Test

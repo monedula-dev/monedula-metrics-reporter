@@ -31,8 +31,9 @@ flowchart LR
   and returns numeric, finite values during snapshot.
 - `YammerMetricRegistry` attaches to Kafka's Yammer registry when broker classes
   are present and stores allow-listed broker-internal metrics.
-- `MetricDataMapper` converts Kafka SPI metrics to OpenTelemetry gauge
-  `MetricData`.
+- `MetricDataMapper` converts Kafka SPI metrics to OpenTelemetry `MetricData`:
+  cumulative `*-total` counters become monotonic Sums (so PromQL `rate()` is
+  correct), everything else becomes a gauge.
 - `YammerMetricDataMapper` converts Yammer gauges, counters, meters, timers,
   and histograms to OpenTelemetry metric data.
 - `MetricCollector` runs a single daemon scheduler thread that snapshots both

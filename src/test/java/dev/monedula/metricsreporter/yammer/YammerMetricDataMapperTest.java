@@ -245,6 +245,39 @@ class YammerMetricDataMapperTest {
     }
 
     @Test
+    void caches_are_pruned_to_the_live_snapshot() {
+        // Two topic-scoped metrics on distinct topics populate both caches; when one topic's
+        // metric disappears from the snapshot, its name + scope entries must not linger
+        // (otherwise scopeAttributesCache leaks one entry per topic-partition forever).
+        MetricName a = new MetricName("kafka.server", "BrokerTopicMetrics", "BytesInPerSec", "topic.topic-a");
+        MetricName b = new MetricName("kafka.server", "BrokerTopicMetrics", "BytesInPerSec", "topic.topic-b");
+        Counter ca = registry.newCounter(a);
+        Counter cb = registry.newCounter(b);
+
+        mapper.mapAll(List.of(entry(a, ca), entry(b, cb)));
+        assertEquals(2, mapper.nameCacheSize());
+        assertEquals(2, mapper.scopeAttributesCacheSize());
+
+        // topic-b's metric is gone this tick.
+        mapper.mapAll(List.of(entry(a, ca)));
+        assertEquals(1, mapper.nameCacheSize(), "stale name-cache entry was not pruned");
+        assertEquals(1, mapper.scopeAttributesCacheSize(), "stale scope-cache entry was not pruned");
+    }
+
+    @Test
+    void cumulative_sum_uses_supplied_start_epoch() {
+        long startEpoch = 456_000_000_000L;
+        var fixed = new YammerMetricDataMapper(Map.of(), startEpoch);
+        MetricName mn = new MetricName("kafka.server", "ReplicaManager", "IsrShrinksPerSec");
+        Counter c = registry.newCounter(mn);
+        c.inc(3);
+        MetricData data = fixed.mapAll(List.of(entry(mn, c))).get(0);
+        assertEquals(
+                startEpoch,
+                data.getDoubleSumData().getPoints().iterator().next().getStartEpochNanos());
+    }
+
+    @Test
     void topic_scope_with_empty_partition_value_emits_topic_only() {
         MetricName mn = new MetricName("kafka.cluster", "Partition", "UnderReplicated", "topic.test-topic.partition.");
         Gauge<Integer> g = new Gauge<Integer>() {

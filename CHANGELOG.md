@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Kafka SPI cumulative counters (metrics named `*-total`) are now exported as
+  monotonic OTLP Sums instead of gauges, so PromQL `rate()` over them is
+  semantically correct. All other SPI metrics remain gauges.
+
+### Fixed
+
+- A metric value that flips to non-finite/non-numeric between snapshot and
+  mapping no longer drops the entire export batch. Values are captured once at
+  snapshot time, which also halves the `synchronized` `metricValue()` reads per
+  tick.
+- Per-metric rendering/name/scope caches are pruned to the live metric set on the
+  export thread, fixing two unbounded leaks under metric/topic churn (the Yammer
+  scope-attribute cache and a removal-vs-export race on the SPI rendering cache)
+  and keeping all cache maintenance off Kafka's metric-callback path.
+- Cumulative-counter `startEpochNanos` stays stable across a `contextChange`
+  mapper rebuild, so a label change no longer looks like a counter reset to
+  downstream tools.
+
 ### Added
 
 - Initial release of the OTLP-native Kafka `MetricsReporter` plugin

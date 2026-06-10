@@ -284,7 +284,7 @@ cd monedula-metrics-reporter
 
 ## How it works
 
-Kafka calls `metricChange()` synchronously when a metric is added or updated. The plugin stores the metric in a `ConcurrentHashMap` (after applying any allow-list regex filter) — no I/O on the calling thread. A daemon scheduler thread periodically snapshots the registry, maps each metric to an OTel gauge `MetricData`, and exports the batch to the collector. If the collector is unreachable, the export call fails silently after its timeout, the batch is dropped, and the next tick starts fresh — no retry queue, no memory growth, no impact on Kafka.
+Kafka calls `metricChange()` synchronously when a metric is added or updated. The plugin stores the metric in a `ConcurrentHashMap` (after applying any allow-list regex filter) — no I/O on the calling thread. A daemon scheduler thread periodically snapshots the registry, maps each metric to OTel `MetricData` (cumulative `*-total` metrics as monotonic Sums, the rest as gauges), and exports the batch to the collector. If the collector is unreachable, the export call fails silently after its timeout, the batch is dropped, and the next tick starts fresh — no retry queue, no memory growth, no impact on Kafka.
 
 ## License
 

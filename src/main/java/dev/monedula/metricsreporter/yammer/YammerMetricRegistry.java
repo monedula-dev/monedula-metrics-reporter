@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 /**
@@ -27,19 +26,9 @@ public class YammerMetricRegistry implements MetricsRegistryListener {
     private final ConcurrentHashMap<MetricName, Metric> metrics = new ConcurrentHashMap<>();
     private final Set<MetricsRegistry> attached =
             java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
-    private volatile Consumer<MetricName> evictionListener;
 
     public YammerMetricRegistry(List<Pattern> allowedPatterns) {
         this.allowList = new AllowList(allowedPatterns);
-    }
-
-    /**
-     * Register a listener notified when a metric leaves the registry. Used by
-     * {@link YammerMetricDataMapper} to invalidate its per-metric name cache.
-     * Only one listener is kept; setting a new one replaces the previous binding.
-     */
-    public void setEvictionListener(Consumer<MetricName> listener) {
-        this.evictionListener = listener;
     }
 
     /** Attach to a registry: capture currently-registered metrics + receive future events. */
@@ -77,8 +66,6 @@ public class YammerMetricRegistry implements MetricsRegistryListener {
     @Override
     public void onMetricRemoved(MetricName name) {
         metrics.remove(name);
-        Consumer<MetricName> l = this.evictionListener;
-        if (l != null) l.accept(name);
     }
 
     /** Snapshot of currently tracked (name, metric) pairs. */
