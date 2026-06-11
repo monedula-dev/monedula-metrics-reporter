@@ -5,7 +5,7 @@ plugins {
     id 'signing'
     // Migrated from com.github.johnrengelman.shadow (archived) to com.gradleup.shadow:
     // 9.x is the first line that supports Gradle 9.
-    id 'com.gradleup.shadow' version '9.4.1'
+    id 'com.gradleup.shadow' version '9.4.2'
     // CycloneDX SBOM generator. The cyclonedxBom task writes build/reports/bom.json
     // describing every runtime dependency the shadow JAR bundles; release.yml
     // attaches it to the GitHub Release so consumers can verify the supply chain.
@@ -13,7 +13,7 @@ plugins {
     // Format / lint enforcement. spotlessCheck runs in CI; spotlessApply formats
     // locally. The 'apply false' here lets the allprojects block below pick up
     // each module's Java source set (root, :e2e, :benchmarks).
-    id 'com.diffplug.spotless' version '8.5.1' apply false
+    id 'com.diffplug.spotless' version '8.6.0' apply false
 }
 
 allprojects {
