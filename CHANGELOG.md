@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+=======
 ### Changed
 
 - The default OTLP endpoint now follows the configured transport: gRPC defaults
@@ -21,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first-tick `NoClassDefFoundError`): the scheduled task now catches `Throwable`,
   logs, and retries on the next interval instead of being silently cancelled by
   `scheduleAtFixedRate`.
+- Allow-list patterns are evaluated independently rather than folded into one
+  regex alternation, so a backreference in one pattern can no longer be corrupted
+  by capture-group renumbering across patterns.
 
 
 ## [0.9.0] - 2026-05-27
