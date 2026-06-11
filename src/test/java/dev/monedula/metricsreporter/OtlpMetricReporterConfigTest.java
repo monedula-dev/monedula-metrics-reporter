@@ -129,6 +129,36 @@ class OtlpMetricReporterConfigTest {
     }
 
     @Test
+    void http_transport_without_explicit_endpoint_defaults_to_http_port() {
+        // Selecting http transport without an endpoint must not fall back to the gRPC :4317
+        // port (which would be unreachable for OTLP/HTTP). It should default to :4318.
+        var cfg = new OtlpMetricReporterConfig(Map.of("otlp.metric.reporter.transport", "http"));
+        assertEquals("http://localhost:4318/v1/metrics", cfg.endpoint());
+    }
+
+    @Test
+    void grpc_transport_without_explicit_endpoint_defaults_to_grpc_port() {
+        var cfg = new OtlpMetricReporterConfig(Map.of("otlp.metric.reporter.transport", "grpc"));
+        assertEquals("http://localhost:4317", cfg.endpoint());
+    }
+
+    @Test
+    void http_transport_preserves_query_string_when_appending_metrics_path() {
+        var cfg = new OtlpMetricReporterConfig(Map.of(
+                "otlp.metric.reporter.endpoint", "http://collector:4318?tenant=monedula",
+                "otlp.metric.reporter.transport", "http"));
+        assertEquals("http://collector:4318/v1/metrics?tenant=monedula", cfg.endpoint());
+    }
+
+    @Test
+    void http_transport_strips_trailing_slash_before_appending_metrics_path() {
+        var cfg = new OtlpMetricReporterConfig(Map.of(
+                "otlp.metric.reporter.endpoint", "http://collector:4318/",
+                "otlp.metric.reporter.transport", "http"));
+        assertEquals("http://collector:4318/v1/metrics", cfg.endpoint());
+    }
+
+    @Test
     void throws_on_invalid_regex_pattern() {
         assertThrows(
                 ConfigException.class,
