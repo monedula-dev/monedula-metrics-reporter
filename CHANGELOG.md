@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The HTTP endpoint metrics-path normalization now preserves any query string or
   fragment instead of clobbering it via string concatenation.
 
+## [0.9.0] - 2026-05-27
+
 ### Added
 
 - Initial release of the OTLP-native Kafka `MetricsReporter` plugin
