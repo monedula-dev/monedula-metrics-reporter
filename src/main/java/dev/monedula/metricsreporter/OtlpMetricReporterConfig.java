@@ -16,7 +16,10 @@ public class OtlpMetricReporterConfig {
     // helpers. These are the canonical names of the keys Kafka passes via
     // AbstractConfig#originalsWithPrefix.
 
-    /** OTLP collector endpoint URL. Default: {@code http://localhost:4317}. */
+    /**
+     * OTLP collector endpoint URL. Default follows the transport:
+     * {@code http://localhost:4317} for gRPC, {@code http://localhost:4318} for HTTP.
+     */
     public static final String ENDPOINT = "otlp.metric.reporter.endpoint";
     /** OTLP transport. {@link #TRANSPORT_GRPC} or {@link #TRANSPORT_HTTP}. Default: {@code grpc}. */
     public static final String TRANSPORT = "otlp.metric.reporter.transport";
@@ -43,13 +46,19 @@ public class OtlpMetricReporterConfig {
 
     public static final String TRANSPORT_GRPC = "grpc";
     public static final String TRANSPORT_HTTP = "http";
+
+    /** Default collector endpoint for the gRPC transport (OTLP/gRPC standard port). */
+    public static final String DEFAULT_GRPC_ENDPOINT = "http://localhost:4317";
+    /** Default collector endpoint for the HTTP transport (OTLP/HTTP standard port). */
+    public static final String DEFAULT_HTTP_ENDPOINT = "http://localhost:4318";
+
     public static final String COMPRESSION_NONE = "none";
     public static final String COMPRESSION_GZIP = "gzip";
     private static final Set<String> SUPPORTED_TRANSPORTS = Set.of(TRANSPORT_GRPC, TRANSPORT_HTTP);
     private static final Set<String> SUPPORTED_COMPRESSION = Set.of(COMPRESSION_NONE, COMPRESSION_GZIP);
 
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
-            Map.entry(ENDPOINT, "http://localhost:4317"),
+            Map.entry(ENDPOINT, DEFAULT_GRPC_ENDPOINT),
             Map.entry(TRANSPORT, TRANSPORT_GRPC),
             Map.entry(INTERVAL_MS, "30000"),
             Map.entry(TIMEOUT_MS, "5000"),
@@ -91,7 +100,11 @@ public class OtlpMetricReporterConfig {
 
     public OtlpMetricReporterConfig(Map<String, ?> configs) {
         this.transport = getString(configs, TRANSPORT, TRANSPORT_GRPC);
-        URI parsedEndpoint = parseEndpoint(getString(configs, ENDPOINT, "http://localhost:4317"));
+        // Default endpoint follows the chosen transport: OTLP/gRPC is :4317, OTLP/HTTP is :4318.
+        // Using the gRPC port for an http transport (the old single default) silently produced
+        // an unreachable endpoint whenever http was selected without an explicit endpoint.
+        String defaultEndpoint = TRANSPORT_HTTP.equals(this.transport) ? DEFAULT_HTTP_ENDPOINT : DEFAULT_GRPC_ENDPOINT;
+        URI parsedEndpoint = parseEndpoint(getString(configs, ENDPOINT, defaultEndpoint));
         this.endpoint = normalizeEndpoint(parsedEndpoint, this.transport);
         this.intervalMs = getLong(configs, INTERVAL_MS, 30_000L);
         this.timeoutMs = getLong(configs, TIMEOUT_MS, 5_000L);
@@ -143,13 +156,24 @@ public class OtlpMetricReporterConfig {
     }
 
     private static String normalizeEndpoint(URI parsed, String transport) {
-        String raw = parsed.toString();
-        if (!TRANSPORT_HTTP.equals(transport)) return raw;
+        if (!TRANSPORT_HTTP.equals(transport)) return parsed.toString();
         String path = parsed.getPath();
-        if (path == null || path.isBlank() || "/".equals(path)) {
-            return raw.replaceAll("/+$", "") + "/v1/metrics";
+        boolean bare = path == null || path.isBlank() || path.chars().allMatch(c -> c == '/');
+        if (!bare) return parsed.toString(); // caller supplied an explicit signal path; leave it.
+        // Append the OTLP/HTTP metrics path by rebuilding from components, so any query string
+        // or fragment is preserved in place rather than being clobbered by string concatenation
+        // (e.g. "http://host:4318?k=v" must become "http://host:4318/v1/metrics?k=v").
+        try {
+            return new URI(
+                            parsed.getScheme(),
+                            parsed.getAuthority(),
+                            "/v1/metrics",
+                            parsed.getQuery(),
+                            parsed.getFragment())
+                    .toString();
+        } catch (URISyntaxException e) {
+            throw new ConfigException(ENDPOINT, parsed.toString(), "could not normalize endpoint: " + e.getMessage());
         }
-        return raw;
     }
 
     private static List<Pattern> compilePatterns(Map<String, ?> cfg) {

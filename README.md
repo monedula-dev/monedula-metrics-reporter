@@ -170,7 +170,7 @@ All keys use the prefix `otlp.metric.reporter.`.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `otlp.metric.reporter.endpoint` | String | `http://localhost:4317` | OTLP collector endpoint. For `grpc`, use the collector gRPC endpoint such as `http://collector:4317`. For `http`, a bare collector root such as `http://collector:4318` is normalized to `http://collector:4318/v1/metrics`; custom paths are used as provided |
+| `otlp.metric.reporter.endpoint` | String | `http://localhost:4317` (grpc) / `http://localhost:4318` (http) | OTLP collector endpoint. The default follows `transport`: gRPC uses :4317, HTTP uses :4318. For `grpc`, use the collector gRPC endpoint such as `http://collector:4317`. For `http`, a bare collector root such as `http://collector:4318` is normalized to `http://collector:4318/v1/metrics`; custom paths are used as provided |
 | `otlp.metric.reporter.transport` | Enum | `grpc` | `grpc` or `http` |
 | `otlp.metric.reporter.interval.ms` | Long | `30000` | Export interval in milliseconds |
 | `otlp.metric.reporter.timeout.ms` | Long | `5000` | Per-export call timeout in milliseconds |
