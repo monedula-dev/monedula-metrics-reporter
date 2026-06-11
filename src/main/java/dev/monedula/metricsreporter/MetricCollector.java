@@ -100,6 +100,11 @@ public class MetricCollector {
             scheduler.shutdownNow();
             Thread.currentThread().interrupt();
         }
+        // If awaitTermination timed out, shutdownNow() has interrupted an in-flight tick that may
+        // still be inside exporter.export() as we call exporter.shutdown() below. The OTLP exporter
+        // tolerates this concurrent call; the worst case is a benign "did not complete cleanly"
+        // warn-log. We accept that over adding more teardown latency on the Kafka close() thread —
+        // bounded shutdown keeps broker shutdown responsive (Kafka availability first).
         var shutdownResult = exporter.shutdown().join(timeoutMs, TimeUnit.MILLISECONDS);
         if (!shutdownResult.isSuccess()) {
             log.warn(
@@ -163,7 +168,12 @@ public class MetricCollector {
             if (!success) {
                 log.warn("OTLP metric export failed or timed out — dropping this batch");
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Catch Throwable, not just Exception: scheduleAtFixedRate silently cancels all
+            // future executions if the task throws, and the captured throwable never reaches
+            // the thread's uncaughtExceptionHandler — so an Error here (e.g. a first-tick
+            // NoClassDefFoundError from lazily-loaded shaded classes) would stop export
+            // permanently with no log. Fail open: log, count a failure, retry next tick.
             log.warn("Error during metric export tick — skipping batch", e);
             success = false;
         } finally {

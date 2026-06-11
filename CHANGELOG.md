@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The HTTP endpoint metrics-path normalization now preserves any query string or
   fragment instead of clobbering it via string concatenation.
+- Export no longer stops permanently if a tick throws an `Error` (e.g. a
+  first-tick `NoClassDefFoundError`): the scheduled task now catches `Throwable`,
+  logs, and retries on the next interval instead of being silently cancelled by
+  `scheduleAtFixedRate`.
+
 
 ## [0.9.0] - 2026-05-27
 
