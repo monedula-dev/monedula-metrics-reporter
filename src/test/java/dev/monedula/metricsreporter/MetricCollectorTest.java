@@ -75,6 +75,31 @@ class MetricCollectorTest {
     }
 
     @Test
+    void error_thrown_during_export_does_not_kill_the_scheduler() throws InterruptedException {
+        // A Throwable that isn't an Exception (e.g. a lazily-triggered NoClassDefFoundError on
+        // the first export, or an AssertionError) must not cancel the fixed-rate schedule.
+        // scheduleAtFixedRate silently suppresses all future runs if a task throws, so the
+        // export thread would go dark with no log — violating the fail-open assumption.
+        CountDownLatch latch = new CountDownLatch(3);
+        MetricExporter exporter = Mockito.mock(MetricExporter.class);
+        when(exporter.export(any())).thenAnswer(inv -> {
+            latch.countDown();
+            throw new AssertionError("boom"); // an Error, not an Exception
+        });
+        when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
+
+        MetricCollector collector =
+                new MetricCollector(new MetricRegistry(List.of()), new MetricDataMapper(Map.of()), exporter, 50L, 500L);
+        collector.start();
+        assertTrue(
+                latch.await(3, TimeUnit.SECONDS), "scheduler stopped after an Error in a tick; export was not retried");
+        collector.stop();
+        assertTrue(
+                collector.exportFailureCount() >= 3,
+                "failure count was " + collector.exportFailureCount() + ", expected >= 3");
+    }
+
+    @Test
     void empty_registry_still_exports_self_monitoring_metrics() throws InterruptedException {
         // Previously this test asserted no export when the registry was empty.
         // Self-monitoring metrics are emitted on every tick now (so operators see
