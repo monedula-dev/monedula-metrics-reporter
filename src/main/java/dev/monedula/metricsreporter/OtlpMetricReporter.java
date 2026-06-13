@@ -73,6 +73,15 @@ public class OtlpMetricReporter implements MetricsReporter {
      */
     private final String instanceId = UUID.randomUUID().toString();
 
+    /**
+     * Stable {@code startEpochNanos} for every cumulative counter this reporter emits
+     * (Kafka SPI {@code *-total} Sums and Yammer Counter/Timer/Histogram/Meter Sums).
+     * Captured once at construction and threaded into every (re)built mapper — including
+     * the {@link #contextChange} rebuild — so a mid-stream label change never looks like a
+     * counter reset to PromQL {@code rate()}.
+     */
+    private final long startEpochNanos = System.currentTimeMillis() * 1_000_000L;
+
     @Override
     public void contextChange(MetricsContext metricsContext) {
         try {
@@ -106,8 +115,7 @@ public class OtlpMetricReporter implements MetricsReporter {
             registry = new MetricRegistry(cfg.allowedMetrics());
 
             Map<String, String> resourceAttrs = combinedResourceAttributes();
-            MetricDataMapper mapper = new MetricDataMapper(namespace, resourceAttrs);
-            registry.setEvictionListener(mapper::onMetricRemoved);
+            MetricDataMapper mapper = new MetricDataMapper(namespace, resourceAttrs, startEpochNanos);
 
             collector = new MetricCollector(
                     registry, mapper, OtlpExporterFactory.create(cfg), cfg.intervalMs(), cfg.timeoutMs());
@@ -239,18 +247,13 @@ public class OtlpMetricReporter implements MetricsReporter {
         MetricCollector c = collector;
         if (c == null) return;
         Map<String, String> resourceAttrs = combinedResourceAttributes();
-        MetricDataMapper newMapper = new MetricDataMapper(namespace, resourceAttrs);
+        // Reuse the stable startEpochNanos so the rebuilt mappers' cumulative counters keep
+        // their original start time across the label change (no spurious PromQL reset). The
+        // old mapper instances become unreachable, so their caches GC out naturally.
+        MetricDataMapper newMapper = new MetricDataMapper(namespace, resourceAttrs, startEpochNanos);
         YammerMetricDataMapper newYammerMapper =
-                yammerRegistry != null ? new YammerMetricDataMapper(resourceAttrs) : null;
+                yammerRegistry != null ? new YammerMetricDataMapper(resourceAttrs, startEpochNanos) : null;
         c.replaceMappers(newMapper, newYammerMapper);
-        // Re-point the registries' eviction listeners at the new mappers' caches —
-        // the old mapper instances become unreachable so their caches GC out naturally.
-        if (registry != null) {
-            registry.setEvictionListener(newMapper::onMetricRemoved);
-        }
-        if (yammerRegistry != null && newYammerMapper != null) {
-            yammerRegistry.setEvictionListener(newYammerMapper::onMetricRemoved);
-        }
         JvmMetricsLifecycle jm = jvmMetrics;
         if (jm != null) {
             jm.rebuildIfRunning(resourceAttrs);
@@ -287,8 +290,7 @@ public class OtlpMetricReporter implements MetricsReporter {
             // metrics-core not on the classpath — shouldn't happen if KafkaYammerMetrics loaded
         }
 
-        YammerMetricDataMapper yammerMapper = new YammerMetricDataMapper(resourceAttrs);
-        yr.setEvictionListener(yammerMapper::onMetricRemoved);
+        YammerMetricDataMapper yammerMapper = new YammerMetricDataMapper(resourceAttrs, startEpochNanos);
         this.yammerRegistry = yr;
         collector.setYammer(yr, yammerMapper);
         log.info("OtlpMetricReporter attached to Kafka Yammer registry — broker-internal metrics enabled");

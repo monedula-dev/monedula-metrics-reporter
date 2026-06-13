@@ -5,7 +5,6 @@ package dev.monedula.metricsreporter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.metrics.KafkaMetric;
@@ -14,20 +13,9 @@ public class MetricRegistry {
 
     private final AllowList allowList;
     private final ConcurrentHashMap<MetricName, KafkaMetric> metrics = new ConcurrentHashMap<>();
-    private volatile Consumer<MetricName> evictionListener;
 
     public MetricRegistry(List<Pattern> allowedPatterns) {
         this.allowList = new AllowList(allowedPatterns);
-    }
-
-    /**
-     * Register a listener notified when a metric leaves the registry. Used by
-     * {@link MetricDataMapper} to invalidate its per-metric rendering cache so
-     * removed metrics don't pile up indefinitely. Only one listener is kept;
-     * setting a new one replaces the previous binding.
-     */
-    public void setEvictionListener(Consumer<MetricName> listener) {
-        this.evictionListener = listener;
     }
 
     public void update(KafkaMetric metric) {
@@ -37,14 +25,21 @@ public class MetricRegistry {
     }
 
     public void remove(KafkaMetric metric) {
-        MetricName name = metric.metricName();
-        metrics.remove(name);
-        Consumer<MetricName> l = this.evictionListener;
-        if (l != null) l.accept(name);
+        metrics.remove(metric.metricName());
     }
 
-    public List<KafkaMetric> snapshot() {
-        List<KafkaMetric> result = new ArrayList<>();
+    /**
+     * A metric paired with the value observed for it at snapshot time. The value is read
+     * exactly once, here, so the export thread never re-reads {@link KafkaMetric#metricValue()}
+     * downstream — a second read could return a different (e.g. {@code NaN} for an empty
+     * rate window) or non-numeric value and, if the mapper threw on it, drop the whole batch.
+     * Reading once also halves the {@code synchronized} {@code metricValue()} calls per tick,
+     * lowering contention with Kafka's metric-recording threads.
+     */
+    public record Sample(KafkaMetric metric, double value) {}
+
+    public List<Sample> snapshot() {
+        List<Sample> result = new ArrayList<>();
         for (KafkaMetric m : metrics.values()) {
             Object raw = m.metricValue();
             // Kafka Measurable impls return double, but Gauge<T> can return Long/Integer/
@@ -52,7 +47,7 @@ public class MetricRegistry {
             if (!(raw instanceof Number)) continue;
             double v = ((Number) raw).doubleValue();
             if (Double.isFinite(v)) {
-                result.add(m);
+                result.add(new Sample(m, v));
             }
         }
         return result;

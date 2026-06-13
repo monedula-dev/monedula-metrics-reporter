@@ -25,8 +25,10 @@ import io.opentelemetry.sdk.metrics.internal.data.ImmutableSumData;
 import io.opentelemetry.sdk.resources.Resource;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class YammerMetricDataMapper {
@@ -56,16 +58,31 @@ public class YammerMetricDataMapper {
     private final ConcurrentHashMap<MetricName, String> nameCache = new ConcurrentHashMap<>();
 
     public YammerMetricDataMapper(Map<String, String> resourceAttributes) {
+        this(resourceAttributes, System.currentTimeMillis() * 1_000_000L);
+    }
+
+    public YammerMetricDataMapper(Map<String, String> resourceAttributes, long startEpochNanos) {
         this.resource = ResourceFactory.create(resourceAttributes);
-        this.startEpochNanos = System.currentTimeMillis() * 1_000_000L;
+        this.startEpochNanos = startEpochNanos;
+    }
+
+    /** Stable cumulative-counter start time; threaded into rebuilt mappers to avoid reset signals. */
+    public long startEpochNanos() {
+        return startEpochNanos;
     }
 
     public List<MetricData> mapAll(Collection<Map.Entry<MetricName, Metric>> snapshot) {
         long now = System.currentTimeMillis() * 1_000_000L;
         List<MetricData> result = new ArrayList<>(snapshot.size());
+        Set<MetricName> liveNames = new HashSet<>(snapshot.size() * 2);
+        Set<String> liveScopes = new HashSet<>();
         for (Map.Entry<MetricName, Metric> entry : snapshot) {
             MetricName n = entry.getKey();
             Metric m = entry.getValue();
+            liveNames.add(n);
+            if (n.getScope() != null && !n.getScope().isEmpty()) {
+                liveScopes.add(n.getScope());
+            }
             String name = nameCache.computeIfAbsent(n, YammerMetricDataMapper::formatName);
             Attributes baseAttrs = cachedAttributesForScope(n.getScope());
 
@@ -87,6 +104,13 @@ public class YammerMetricDataMapper {
             }
             // else: unknown metric type, skip
         }
+        // Prune caches to the live set on the export thread. nameCache is keyed per metric;
+        // scopeAttributesCache is keyed by the (shared) scope string, so it can only be
+        // evicted once no live metric references that scope — exactly what retainAll does
+        // against the scopes seen this tick. Keeps both caches bounded under topic churn
+        // without touching Kafka's metric-removal callback path.
+        nameCache.keySet().retainAll(liveNames);
+        scopeAttributesCache.keySet().retainAll(liveScopes);
         return result;
     }
 
@@ -135,12 +159,14 @@ public class YammerMetricDataMapper {
         }
     }
 
-    /** Drop the cached name for a removed metric. Wired up by {@link YammerMetricRegistry}. */
-    public void onMetricRemoved(MetricName name) {
-        nameCache.remove(name);
-        // scopeAttributesCache is keyed by scope string and shared across metrics with the
-        // same scope (e.g. all per-partition metrics on a topic share one entry), so it
-        // would be wrong to evict here on a single-metric removal.
+    /** Cached-name entry count. Visible for tests verifying live-set pruning. */
+    int nameCacheSize() {
+        return nameCache.size();
+    }
+
+    /** Cached-scope-attributes entry count. Visible for tests verifying live-set pruning. */
+    int scopeAttributesCacheSize() {
+        return scopeAttributesCache.size();
     }
 
     private static String formatName(MetricName n) {

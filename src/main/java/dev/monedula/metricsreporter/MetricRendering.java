@@ -16,9 +16,17 @@ public final class MetricRendering {
 
     public final String name;
     public final Attributes attributes;
+    /**
+     * Whether this metric is a monotonic cumulative counter (Kafka SPI {@code *-total}
+     * metrics) and should be emitted as an OTLP Sum rather than a Gauge, so PromQL
+     * {@code rate()} is semantically correct. Fixed for the metric's lifetime, so it
+     * lives in the cached rendering alongside the name and attributes.
+     */
+    public final boolean monotonic;
 
-    public MetricRendering(String name, Attributes attributes) {
+    public MetricRendering(String name, Attributes attributes, boolean monotonic) {
         this.name = name;
         this.attributes = attributes;
+        this.monotonic = monotonic;
     }
 }
