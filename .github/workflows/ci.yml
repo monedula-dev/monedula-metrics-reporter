@@ -39,7 +39,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
       - name: Run spotlessCheck
         run: ./gradlew spotlessCheck --no-daemon --stacktrace
 
@@ -79,7 +79,7 @@ jobs:
           java-version: ${{ matrix.java }}
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Build shadow JAR
         run: ./gradlew shadowJar -PkafkaVersion=${{ matrix.kafka }} --no-daemon --stacktrace
@@ -117,7 +117,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: End-to-end test
         run: ./gradlew :e2e:test --no-daemon --stacktrace
