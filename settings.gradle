@@ -18,7 +18,7 @@
 // publicationType = 'AUTOMATIC' releases once Sonatype's validation passes.
 // Change to 'USER_MANAGED' to review the deployment in the Portal UI first.
 plugins {
-    id 'com.gradleup.nmcp.settings' version '1.5.0'
+    id 'com.gradleup.nmcp.settings' version '1.6.0'
 }
 
 nmcpSettings {
