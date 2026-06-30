@@ -280,6 +280,75 @@ class OtlpMetricReporterTest {
     }
 
     @Test
+    void client_receiver_returned_when_enabled() {
+        var reporter = new OtlpMetricReporter();
+        reporter.configure(Map.of(
+                OtlpMetricReporterConfig.ENDPOINT, "http://localhost:4317",
+                OtlpMetricReporterConfig.INTERVAL_MS, "60000",
+                OtlpMetricReporterConfig.TIMEOUT_MS, "1000"));
+        try {
+            // Typed assignment (not instanceof): removing `implements ClientTelemetry` from the
+            // reporter would fail this line at compile time rather than at runtime.
+            org.apache.kafka.server.telemetry.ClientTelemetry telemetry = reporter;
+            assertNotNull(telemetry.clientReceiver());
+        } finally {
+            reporter.close();
+        }
+    }
+
+    @Test
+    void client_receiver_null_when_disabled() {
+        var reporter = new OtlpMetricReporter();
+        reporter.configure(Map.of(
+                OtlpMetricReporterConfig.ENDPOINT, "http://localhost:4317",
+                OtlpMetricReporterConfig.INTERVAL_MS, "60000",
+                OtlpMetricReporterConfig.TIMEOUT_MS, "1000",
+                OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENABLED, "false"));
+        try {
+            org.apache.kafka.server.telemetry.ClientTelemetry telemetry = reporter;
+            assertNull(telemetry.clientReceiver());
+        } finally {
+            reporter.close();
+        }
+    }
+
+    @Test
+    void client_receiver_null_when_noop() {
+        var reporter = new OtlpMetricReporter();
+        // Invalid config (timeout >= interval) forces no-op mode.
+        reporter.configure(Map.of(
+                OtlpMetricReporterConfig.INTERVAL_MS, "1000",
+                OtlpMetricReporterConfig.TIMEOUT_MS, "1000"));
+        try {
+            org.apache.kafka.server.telemetry.ClientTelemetry telemetry = reporter;
+            assertNull(telemetry.clientReceiver());
+        } finally {
+            reporter.close();
+        }
+    }
+
+    @Test
+    void context_change_refreshes_client_telemetry_broker_identity() {
+        var reporter = new OtlpMetricReporter();
+        reporter.configure(Map.of(
+                OtlpMetricReporterConfig.ENDPOINT, "http://localhost:4317",
+                OtlpMetricReporterConfig.INTERVAL_MS, "60000",
+                OtlpMetricReporterConfig.TIMEOUT_MS, "1000"));
+        try {
+            reporter.contextChange(
+                    new KafkaMetricsContext("kafka.server", Map.of("kafka.cluster.id", "CID", "kafka.node.id", "3")));
+            assertEquals(
+                    "CID",
+                    reporter.clientTelemetryForwarder.currentBrokerIdentity().get("kafka.cluster.id"));
+            assertEquals(
+                    "3",
+                    reporter.clientTelemetryForwarder.currentBrokerIdentity().get("kafka.node.id"));
+        } finally {
+            reporter.close();
+        }
+    }
+
+    @Test
     void context_change_after_configure_rebuilds_jvm_metrics_resource_labels() {
         OtlpMetricReporter reporter = new OtlpMetricReporter();
         reporter.configure(Map.of(

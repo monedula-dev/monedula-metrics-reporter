@@ -57,6 +57,7 @@ dependencies {
     implementation "io.opentelemetry:opentelemetry-sdk-metrics:${otelVersion}"
     implementation "io.opentelemetry:opentelemetry-exporter-otlp:${otelVersion}"
     implementation "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java17:${otelInstrumentationVersion}"
+    implementation "io.opentelemetry.proto:opentelemetry-proto:${otelProtoVersion}"
 
     testImplementation "org.apache.kafka:kafka-clients:${kafkaVersion}"
     testImplementation "com.yammer.metrics:metrics-core:${yammerMetricsVersion}"
@@ -116,6 +117,7 @@ shadowJar {
     relocate 'io.grpc', 'dev.monedula.metricsreporter.shaded.grpc'
     relocate 'okhttp3', 'dev.monedula.metricsreporter.shaded.okhttp3'
     relocate 'okio', 'dev.monedula.metricsreporter.shaded.okio'
+    relocate 'com.google.protobuf', 'dev.monedula.metricsreporter.shaded.protobuf'
     relocate 'kotlin', 'dev.monedula.metricsreporter.shaded.kotlin'
     relocate 'org.jetbrains.annotations', 'dev.monedula.metricsreporter.shaded.jetbrains_annotations'
     relocate 'org.intellij.lang.annotations', 'dev.monedula.metricsreporter.shaded.intellij_annotations'

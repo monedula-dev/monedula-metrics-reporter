@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +54,21 @@ public class MetricCollector {
     /** Wall-clock duration of the previous tick in milliseconds. */
     private volatile long lastExportDurationMs;
 
+    /**
+     * Snapshot of the client-telemetry forwarder's self-monitoring counters. A named record —
+     * rather than a positional array — so the counter-to-metric mapping is compiler-checked at
+     * both the producing lambda (OtlpMetricReporter) and the consuming export below.
+     */
+    public record ClientTelemetryCounters(
+            long received, long forwarded, long dropped, long unsupportedMetricsDropped, long queueDepth) {}
+
+    /**
+     * Optional source of client-telemetry counters. Null until a forwarder is wired (client
+     * telemetry enabled). Read each tick so these self-metrics ride the same export as the rest
+     * of the reporter self-monitoring.
+     */
+    private volatile Supplier<ClientTelemetryCounters> clientTelemetryCounters;
+
     public MetricCollector(
             MetricRegistry registry,
             MetricDataMapper mapper,
@@ -71,6 +87,11 @@ public class MetricCollector {
             t.setUncaughtExceptionHandler((th, ex) -> log.error("Uncaught exception in metric export thread", ex));
             return t;
         });
+    }
+
+    /** Attach (or clear, with {@code null}) the client-telemetry counter source. */
+    public void setClientTelemetryCounters(Supplier<ClientTelemetryCounters> counters) {
+        this.clientTelemetryCounters = counters;
     }
 
     /** Attach an optional Yammer source. May be called any time before/after start. */
@@ -119,6 +140,11 @@ public class MetricCollector {
         return mapper;
     }
 
+    /** Run a single export synchronously. Visible for tests. */
+    void exportOnceForTest() {
+        exportTick();
+    }
+
     /** Total exports that completed successfully since this collector started. Exposed for tests. */
     long exportSuccessCount() {
         return exportSuccessCount.sum();
@@ -159,8 +185,43 @@ public class MetricCollector {
                     now,
                     "monedula_reporter_export_duration_ms",
                     "Wall-clock duration of the previous export tick in milliseconds",
-                    "ms",
+                    // Unit intentionally left blank: the "ms" is already in the metric name, and a
+                    // non-empty OTLP unit makes the Prometheus exporter append a "_milliseconds"
+                    // suffix (yielding monedula_reporter_export_duration_ms_milliseconds), which
+                    // breaks the documented name and the quickstart kafka-metrics dashboard.
+                    "",
                     lastExportDurationMs));
+
+            Supplier<ClientTelemetryCounters> ctc = this.clientTelemetryCounters;
+            if (ctc != null) {
+                ClientTelemetryCounters c = ctc.get();
+                data.add(selfSum(
+                        now,
+                        "monedula_reporter_clienttelemetry_received_total",
+                        "Total KIP-714 client telemetry payloads accepted since the reporter started",
+                        c.received()));
+                data.add(selfSum(
+                        now,
+                        "monedula_reporter_clienttelemetry_forwarded_total",
+                        "Total KIP-714 client telemetry payloads forwarded to the collector since the reporter started",
+                        c.forwarded()));
+                data.add(selfSum(
+                        now,
+                        "monedula_reporter_clienttelemetry_dropped_total",
+                        "Total KIP-714 client telemetry payloads dropped (queue full or export failure) since the reporter started",
+                        c.dropped()));
+                data.add(selfSum(
+                        now,
+                        "monedula_reporter_clienttelemetry_unsupported_metrics_dropped_total",
+                        "Total client telemetry metric data points dropped as unsupported types since the reporter started",
+                        c.unsupportedMetricsDropped()));
+                data.add(selfGauge(
+                        now,
+                        "monedula_reporter_clienttelemetry_queue_depth",
+                        "Current depth of the client telemetry forwarder queue",
+                        "",
+                        c.queueDepth()));
+            }
 
             var result = exporter.export(data);
             result.join(timeoutMs, TimeUnit.MILLISECONDS);

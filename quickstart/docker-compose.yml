@@ -115,3 +115,109 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
+
+  # --- Demo client: enables client telemetry out-of-the-box ---
+  # Waits for the cluster, creates a KIP-714 client-metrics subscription
+  # (metrics="*" = all client metrics), then runs a continuous produce+consume
+  # loop. The console/perf clients push their own OTLP telemetry (KIP-714,
+  # enable.metrics.push defaults true); the broker plugin forwards it to the
+  # collector, populating the client dashboards. Also generates broker-side
+  # traffic for the existing Production/Consumption dashboards.
+  demo:
+    image: apache/kafka:4.2.0
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -u
+        echo "demo: waiting for kafka..."
+        until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka1:9092 --list >/dev/null 2>&1; do sleep 3; done
+        echo "demo: creating client-metrics subscription (idempotent)"
+        /opt/kafka/bin/kafka-client-metrics.sh --bootstrap-server kafka1:9092 --alter \
+          --name quickstart-clients --metrics "*" --interval 5000 || true
+        echo "demo: creating topic"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka1:9092 --create --if-not-exists \
+          --topic quickstart-demo --partitions 3 --replication-factor 3 || true
+        echo "demo: starting consumer"
+        /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka1:9092 \
+          --topic quickstart-demo --group quickstart-demo-group >/dev/null 2>&1 &
+        echo "demo: starting continuous producer"
+        while true; do
+          /opt/kafka/bin/kafka-producer-perf-test.sh --topic quickstart-demo \
+            --num-records 30000 --record-size 256 --throughput 1000 \
+            --producer-props bootstrap.servers=kafka1:9092 || true
+          sleep 5
+        done
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+    restart: unless-stopped
+
+  # --- librdkafka demo client (confluent-kafka-python) — opt-in via profile ---
+  # Run INSTEAD of the Java `demo` (stop that first) to see which panels populate
+  # for a non-JVM, librdkafka-based client. librdkafka (>=2.5) supports KIP-714 and
+  # pushes only the standard org.apache.kafka.* metrics (no vendor extras), so the
+  # dashboards' "Extended" panels stay empty for it.
+  # Enable with:  docker compose --project-directory quickstart --profile librdkafka up -d demo-librdkafka
+  #
+  # The init container (re)creates the client-metrics subscription so this profile is
+  # self-contained — it works even when the Java `demo` is stopped. The broker keeps the
+  # subscription in cluster metadata, which the quickstart brokers do not persist, so it
+  # can vanish after a broker recreate. confluent-kafka-python's AdminClient cannot create
+  # a CLIENT_METRICS subscription, hence the apache/kafka CLI image here.
+  demo-librdkafka-init:
+    image: apache/kafka:4.2.0
+    profiles: ["librdkafka"]
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka1:9092 --list >/dev/null 2>&1; do sleep 3; done
+        /opt/kafka/bin/kafka-client-metrics.sh --bootstrap-server kafka1:9092 --alter \
+          --name quickstart-clients --metrics "*" --interval 5000
+        echo "demo-librdkafka-init: client-metrics subscription ensured"
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+    restart: "no"
+
+  demo-librdkafka:
+    image: python:3.12-slim
+    profiles: ["librdkafka"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        pip install --no-cache-dir 'confluent-kafka>=2.5.0' >/dev/null
+        cat > /demo.py <<'PY'
+        import threading, time
+        from confluent_kafka import Producer, Consumer
+        BOOT = "kafka1:9092"
+        TOPIC = "quickstart-librdkafka-demo"
+        # enable.metrics.push defaults true in librdkafka >=2.5; set explicitly for clarity.
+        p = Producer({"bootstrap.servers": BOOT, "enable.metrics.push": True, "client.id": "librdkafka-demo-producer"})
+        c = Consumer({"bootstrap.servers": BOOT, "group.id": "librdkafka-demo-group",
+                      "auto.offset.reset": "earliest", "enable.metrics.push": True, "client.id": "librdkafka-demo-consumer"})
+        c.subscribe([TOPIC])
+        def consume():
+            while True:
+                m = c.poll(1.0)
+        threading.Thread(target=consume, daemon=True).start()
+        n = 0
+        while True:
+            p.produce(TOPIC, key=f"k{n}".encode(), value=f"v{n}".encode()); n += 1
+            if n % 1000 == 0: p.flush()
+            time.sleep(0.005)  # ~200 msg/s
+        PY
+        python /demo.py
+    depends_on:
+      kafka1:
+        condition: service_started
+      kafka2:
+        condition: service_started
+      kafka3:
+        condition: service_started
+      demo-librdkafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped

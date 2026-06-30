@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- KIP-714 client telemetry forwarding: the reporter now implements Kafka's
+  `ClientTelemetry` interface, receives the OTLP metrics that KIP-714 clients
+  push to the broker, and forwards them to the collector as a third metric
+  stream alongside the SPI and Yammer registries. Forwarded client metrics are
+  enriched with broker identity (`kafka_cluster_id`/`kafka_node_id`) and
+  `client_id` by default; `client_instance_id`, principal, and client address
+  are opt-in. New config keys under `otlp.metric.reporter.client.telemetry.*`,
+  five `monedula_reporter_clienttelemetry_*` self-monitoring metrics, two
+  Grafana client dashboards (producer/consumer, split into Standard vs
+  Extended panels by client-library portability), and quickstart demo clients
+  (Java by default, librdkafka/confluent-kafka-python behind a compose
+  profile).
 
 ### Changed
 
@@ -19,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Metric rename:** the export-duration self-metric now reaches Prometheus as
+  `monedula_reporter_export_duration_ms` — the name the README and the
+  quickstart dashboards/alerts always documented. In 0.9.0 the metric carried a
+  redundant OTLP `ms` unit that made the collector's Prometheus exporter append
+  a unit suffix, so it was actually scraped as
+  `monedula_reporter_export_duration_ms_milliseconds`. Any dashboard, recording
+  rule, or alert built against that suffixed name must be updated to the
+  documented name after upgrading.
 - The HTTP endpoint metrics-path normalization now preserves any query string or
   fragment instead of clobbering it via string concatenation.
 - Export no longer stops permanently if a tick throws an `Error` (e.g. a
