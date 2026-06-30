@@ -3,6 +3,10 @@
 package dev.monedula.metricsreporter;
 
 import com.yammer.metrics.core.MetricsRegistry;
+import dev.monedula.metricsreporter.clienttelemetry.ClientMetricsConverter;
+import dev.monedula.metricsreporter.clienttelemetry.ClientMetricsEnricher;
+import dev.monedula.metricsreporter.clienttelemetry.ClientTelemetryForwarder;
+import dev.monedula.metricsreporter.clienttelemetry.ClientTelemetryReceiverImpl;
 import dev.monedula.metricsreporter.yammer.YammerMetricDataMapper;
 import dev.monedula.metricsreporter.yammer.YammerMetricRegistry;
 import java.util.Collections;
@@ -13,6 +17,8 @@ import java.util.UUID;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsContext;
 import org.apache.kafka.common.metrics.MetricsReporter;
+import org.apache.kafka.server.telemetry.ClientTelemetry;
+import org.apache.kafka.server.telemetry.ClientTelemetryReceiver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,7 +44,7 @@ import org.slf4j.LoggerFactory;
  * {@code noop} flag. JVM-metrics setup and teardown are delegated to
  * {@link JvmMetricsLifecycle}, which owns its own volatile "running" predicate.
  */
-public class OtlpMetricReporter implements MetricsReporter {
+public class OtlpMetricReporter implements MetricsReporter, ClientTelemetry {
 
     private static final Logger log = LoggerFactory.getLogger(OtlpMetricReporter.class);
 
@@ -61,6 +67,15 @@ public class OtlpMetricReporter implements MetricsReporter {
      * read its {@code resource} field without going through OTel internals.
      */
     volatile JvmMetricsLifecycle jvmMetrics;
+
+    /**
+     * KIP-714 forwarder + receiver. Both stay {@code null} when client telemetry is
+     * disabled or the reporter is in no-op mode. Package-private so tests can assert on
+     * client-telemetry wiring.
+     */
+    volatile ClientTelemetryForwarder clientTelemetryForwarder;
+
+    private volatile ClientTelemetryReceiver clientTelemetryReceiver;
 
     /**
      * Per-reporter {@code service.instance.id} (OTel semantic convention). Generated
@@ -138,6 +153,35 @@ public class OtlpMetricReporter implements MetricsReporter {
                     log.warn("Failed to start JVM runtime metrics, continuing without them", t);
                 }
             }
+
+            if (cfg.clientTelemetryEnabled()) {
+                ClientMetricsEnricher enricher = new ClientMetricsEnricher(
+                        cfg.clientTelemetryEnrichBroker(),
+                        cfg.clientTelemetryEnrichClientIdentity(),
+                        cfg.clientTelemetryEnrichClientId(),
+                        cfg.clientTelemetryEnrichClientInstanceId());
+                ClientTelemetryForwarder forwarder = new ClientTelemetryForwarder(
+                        OtlpExporterFactory.create(cfg),
+                        new ClientMetricsConverter(enricher),
+                        cfg.clientTelemetryQueueCapacity(),
+                        cfg.timeoutMs());
+                // Publish the field before any further setup (which builds the exporter eagerly), so a
+                // failure in setBrokerIdentity/start still routes the forwarder's exporter through teardown().
+                this.clientTelemetryForwarder = forwarder;
+                forwarder.setBrokerIdentity(contextLabels);
+                forwarder.start();
+                ClientTelemetryForwarder f = forwarder;
+                collector.setClientTelemetryCounters(() -> new long[] {
+                    f.receivedCount(),
+                    f.forwardedCount(),
+                    f.droppedCount(),
+                    f.unsupportedMetricsDroppedCount(),
+                    f.queueDepth()
+                });
+                this.clientTelemetryReceiver =
+                        new ClientTelemetryReceiverImpl(forwarder::submit, cfg.clientTelemetryEnrichClientIdentity());
+                log.info("OtlpMetricReporter client telemetry (KIP-714) receiver enabled");
+            }
         } catch (Exception e) {
             // Kafka availability comes first (see docs/assumptions.md): a bad reporter config
             // must not crash the broker. Configure() exceptions propagate through
@@ -185,6 +229,15 @@ public class OtlpMetricReporter implements MetricsReporter {
         teardown();
     }
 
+    @Override
+    public ClientTelemetryReceiver clientReceiver() {
+        // Null in no-op mode or when disabled — the broker then won't advertise the capability.
+        // Kafka calls this once and caches the result; the receiver returned here is bound to the
+        // forwarder built at the current configure(). The reporter is not Reconfigurable, so Kafka
+        // does not re-call configure() in normal operation and this identity stays stable.
+        return noop ? null : clientTelemetryReceiver;
+    }
+
     /**
      * Release any resources that may have been allocated during {@link #configure}: the
      * scheduled export thread and its OTLP exporter, plus the optional JVM-runtime SDK.
@@ -220,6 +273,16 @@ public class OtlpMetricReporter implements MetricsReporter {
             }
             this.jvmMetrics = null;
         }
+        ClientTelemetryForwarder ctf = this.clientTelemetryForwarder;
+        if (ctf != null) {
+            try {
+                ctf.stop();
+            } catch (Exception e) {
+                log.warn("Error stopping client telemetry forwarder", e);
+            }
+            this.clientTelemetryForwarder = null;
+        }
+        this.clientTelemetryReceiver = null;
         this.registry = null;
         this.yammerRegistry = null;
     }
@@ -257,6 +320,10 @@ public class OtlpMetricReporter implements MetricsReporter {
         JvmMetricsLifecycle jm = jvmMetrics;
         if (jm != null) {
             jm.rebuildIfRunning(resourceAttrs);
+        }
+        ClientTelemetryForwarder ctf = clientTelemetryForwarder;
+        if (ctf != null) {
+            ctf.setBrokerIdentity(contextLabels);
         }
     }
 

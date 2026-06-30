@@ -182,6 +182,12 @@ All keys use the prefix `otlp.metric.reporter.`.
 | `otlp.metric.reporter.client.certificate.path` | String | `""` | Optional path to a PEM client certificate for mTLS. Must be configured together with `otlp.metric.reporter.client.key.path` |
 | `otlp.metric.reporter.client.key.path` | String | `""` | Optional path to a PEM client private key for mTLS. Must be configured together with `otlp.metric.reporter.client.certificate.path` |
 | `otlp.metric.reporter.jvm.metrics.enabled` | Boolean | `true` | Whether to also export JVM runtime metrics via OpenTelemetry's runtime instrumentation library. Disable if you scrape JVM metrics elsewhere. |
+| `otlp.metric.reporter.client.telemetry.enabled` | Boolean | `true` | Enable the KIP-714 client-telemetry receiver. Auto-active on brokers but inert until a client-metrics subscription exists (see below); `false` makes the broker not advertise the capability at all |
+| `otlp.metric.reporter.client.telemetry.enrich.broker` | Boolean | `true` | Attach broker identity (`kafka_cluster_id` / `kafka_node_id`) to forwarded client metrics so they join broker series in PromQL |
+| `otlp.metric.reporter.client.telemetry.enrich.client.identity` | Boolean | `false` | Also attach the authenticated principal (`kafka_client_principal`) and client address (`kafka_client_address`). High-cardinality / PII — opt in deliberately |
+| `otlp.metric.reporter.client.telemetry.enrich.client.id` | Boolean | `true` | Attach the client's `client_id` (from the request context) as a label, so client metrics can be grouped per application. Moderate cardinality; on by default |
+| `otlp.metric.reporter.client.telemetry.enrich.client.instance.id` | Boolean | `false` | Attach the KIP-714 `client_instance_id` (a per-client-instance UUID) as a label. High cardinality — opt in deliberately |
+| `otlp.metric.reporter.client.telemetry.queue.capacity` | Int | `1024` | Bounded in-memory queue for inbound client pushes; overflow drops the payload (counted in `monedula_reporter_clienttelemetry_dropped_total`) |
 
 For TLS with the platform default trust store, use an `https://` OTLP endpoint. Configure `trusted.certificates.path` when the collector uses a private CA, and configure both client TLS paths when the collector requires mutual TLS. If any of these static settings are malformed or unreadable, the reporter logs the startup failure and runs as no-op so Kafka remains available.
 
@@ -190,6 +196,33 @@ For TLS with the platform default trust store, use an `https://` OTLP endpoint. 
 Anything beyond the reporter-level controls above — credential rotation, HTTP/SOCKS proxy chains, fan-out to multiple backends, vendor-specific OTLP exporters (Grafana Cloud, Honeycomb, Datadog, …), batching/retry policy — lives in the OpenTelemetry Collector, not in this plugin. See the upstream [Collector configuration docs](https://opentelemetry.io/docs/collector/configuration/) for those operational concerns. The reporter's settings rotate via JVM restart only (see [docs/assumptions.md](docs/assumptions.md#operational-assumptions)).
 
 Metric names are emitted as flat lowercase `{namespace}_{group}_{name}` (Strimzi-style): non-alphanumeric characters become underscores, consecutive underscores collapse, and leading/trailing underscores are stripped. The `{namespace}` segment is sourced from `MetricsContext._namespace` (e.g. `kafka.server` on a broker, `kafka.producer` / `kafka.consumer` on clients). Example: broker-side `producer-metrics` / `record-send-rate` becomes `kafka_server_producer_metrics_record_send_rate`. If no namespace is present in the context, the prefix is omitted (`producer_metrics_record_send_rate`).
+
+## Client telemetry (KIP-714)
+
+Beyond the broker's SPI and Yammer registries, the plugin also receives **client-pushed** metrics via [KIP-714](https://cwiki.apache.org/confluence/display/KAFKA/KIP-714%3A+Client+metrics+and+observability). `OtlpMetricReporter` implements Kafka's `ClientTelemetry` interface, so remote producers and consumers can push their *own* OTLP telemetry (client-side request latencies, rebalance/coordinator timings, connection churn) to the broker — and this plugin forwards it to the same collector, with no instrumentation on the client applications. It is a third metric stream alongside the broker SPI and Yammer registries.
+
+The receiver is **auto-enabled on brokers but inert until you configure a client-metrics subscription** (`kafka-client-metrics.sh` or a `CLIENT_METRICS` dynamic config). With no subscription, KIP-714 clients complete the handshake but never push, so nothing flows. Set `otlp.metric.reporter.client.telemetry.enabled=false` to refuse the capability entirely (the broker then won't advertise it).
+
+Forwarded client metrics are enriched, by default, with the same `kafka_cluster_id` / `kafka_node_id` resource labels the broker's own series carry, so client and broker series join cleanly in PromQL. The client's `client_id` is also added by default (`client.telemetry.enrich.client.id`), giving a per-application label so metrics from different clients don't merge. The KIP-714 `client_instance_id` (a per-instance UUID, high cardinality) is opt-in via `client.telemetry.enrich.client.instance.id=true`, and the authenticated principal + client address are opt-in via `client.telemetry.enrich.client.identity=true` (PII).
+
+> KIP-714 also defines `client_software_name` / `client_software_version` labels, but Kafka does not expose those to the telemetry-receiver plugin (the broker learns them from the client's `ApiVersions` request but doesn't pass them on), so the plugin cannot add them. The client's instrumentation scope (`otel_scope_name` / `otel_scope_version`) is the closest available signal — e.g. librdkafka reports its client id and version there, while the Java client reports a generic `kafka-client` scope.
+
+Notes and limits:
+
+- **`allowed.metrics` does not apply to client metrics.** Which client metrics are collected is governed by the KIP-714 subscription itself (broker-side), so a second filter here would be redundant.
+- **Fidelity boundary.** Gauge, sum, and histogram data points are forwarded; any other OTLP type (exponential histogram, summary) is dropped and counted in `monedula_reporter_clienttelemetry_unsupported_metrics_dropped_total`. This covers the standard KIP-714 client metric set.
+- **One receiver per broker.** Kafka uses a single `ClientTelemetry` reporter; if another telemetry plugin is also configured, which one Kafka selects is undefined.
+- **Broker identity is attached once the broker context is known.** Client metrics forwarded before Kafka delivers the broker `MetricsContext` carry no `kafka_cluster_id` / `kafka_node_id` labels. In practice this window closes at broker startup, long before any operator configures a subscription, so client pushes are always enriched — this mirrors how the SPI/Yammer series acquire their context labels.
+
+The receiver path is fail-safe like the rest of the plugin: client pushes are copied onto a bounded in-memory queue on the request-handler thread (never blocking Kafka) and forwarded asynchronously; collector failures drop the batch and never stall the broker. Five self-monitoring metrics describe its health on every export tick:
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `monedula_reporter_clienttelemetry_received_total` | counter | Client telemetry payloads accepted (per push). |
+| `monedula_reporter_clienttelemetry_forwarded_total` | counter | Payloads successfully forwarded to the collector. |
+| `monedula_reporter_clienttelemetry_dropped_total` | counter | Payloads dropped (queue full or export failure). |
+| `monedula_reporter_clienttelemetry_unsupported_metrics_dropped_total` | counter | Individual data points dropped as unsupported types. |
+| `monedula_reporter_clienttelemetry_queue_depth` | gauge | Current depth of the inbound queue. |
 
 ## Quickstart
 
@@ -207,7 +240,7 @@ Give the containers ~45 seconds to come up. The compose file mounts the freshly-
 
 ### Open Grafana
 
-Visit [http://localhost:3000](http://localhost:3000) (anonymous access enabled — no login). Five dashboards are auto-provisioned into the **Kafka** folder:
+Visit [http://localhost:3000](http://localhost:3000) (anonymous access enabled — no login). Seven dashboards are auto-provisioned into the **Kafka** folder:
 
 | Dashboard | UID | Use it for |
 |-----------|-----|------------|
@@ -216,6 +249,8 @@ Visit [http://localhost:3000](http://localhost:3000) (anonymous access enabled �
 | Kafka Consumption | [`kafka-otlp-consumption`](http://localhost:3000/d/kafka-otlp-consumption) | Consumer-side: outbound throughput, Fetch latency, replica-fetcher lag |
 | Kafka Topic Details | [`kafka-otlp-topic-details`](http://localhost:3000/d/kafka-otlp-topic-details) | Per-topic drill-down: throughput, per-partition log end offset, leaders, ISR |
 | Kafka JVM Health | [`kafka-otlp-jvm`](http://localhost:3000/d/kafka-otlp-jvm) | JVM runtime: heap, GC, threads, class loading, CPU |
+| Kafka Producers (client) | [`kafka-otlp-client-producers`](http://localhost:3000/d/kafka-otlp-client-producers) | KIP-714 client-push: producer throughput, record error rate, batch metrics |
+| Kafka Consumers (client) | [`kafka-otlp-client-consumers`](http://localhost:3000/d/kafka-otlp-client-consumers) | KIP-714 client-push: fetch throughput, commit rate, assignment churn |
 
 ### Start at the overview
 
@@ -256,6 +291,44 @@ The plugin also exports JVM runtime metrics via OpenTelemetry's `opentelemetry-r
 ### Drop down to Prometheus
 
 Prometheus is live on [http://localhost:9090](http://localhost:9090) if you want to write ad-hoc PromQL or confirm metric-type metadata flows end-to-end (e.g. `curl localhost:9090/api/v1/metadata?metric=kafka_controller_kafkacontroller_activecontrollercount` should report `"type":"gauge"`, not `"unknown"`).
+
+### Client telemetry is enabled automatically
+
+The `demo` service creates a KIP-714 client-metrics subscription (`quickstart-clients`,
+all metrics, 5s interval) and runs a continuous producer + consumer against the
+`quickstart-demo` topic. Those clients push their own OTLP telemetry to the brokers,
+which the plugin forwards to the collector — populating the **Kafka Producers (client)**
+and **Kafka Consumers (client)** dashboards (in the `Kafka` folder), and feeding the
+broker-side dashboards too.
+
+To turn it off, remove the `demo` service from `docker-compose.yml`, or delete the
+subscription:
+
+    docker exec quickstart-kafka1-1 /opt/kafka/bin/kafka-client-metrics.sh \
+      --bootstrap-server kafka1:9092 --delete --name quickstart-clients
+
+On your own cluster, create a subscription the same way (`--alter --name <n>
+--metrics "*" --interval 5000`); any KIP-714 client (`enable.metrics.push=true`,
+the default) will then push.
+
+### Standard vs Extended panels (client-library portability)
+
+KIP-714 standardizes a small core set of metric names that **every** compliant client emits; beyond that, each client library exposes its own extended metrics. The Java/JVM client pushes its full internal registry (~100+ series); librdkafka-based clients (confluent-kafka for Python / Go / .NET / Node, librdkafka ≥ 2.5) emit **only the standard set**. So the client dashboards split their panels into two rows:
+
+- **Standard — populated by all KIP-714 clients:** request / fetch / rebalance / commit / per-node latency, produce throttle, record-queue time, poll-idle ratio, assigned partitions, connection creation.
+- **Extended — JVM/Java client only:** throughput rates, consumer lag/lead, batching & buffer, per-topic and per-member breakdowns, etc. These panels are **empty for librdkafka-based clients**.
+
+Because the plugin adds a `client_id` label (see `enrich.client.id` above), metrics from different clients **don't** merge — so you can run a librdkafka client (a confluent-kafka-python producer/consumer, behind a Compose profile) **alongside** the Java demo and compare them on the same dashboards:
+
+```bash
+docker compose --project-directory quickstart --profile librdkafka up -d demo-librdkafka
+```
+
+Then use the **Client** dropdown at the top of the client dashboards to filter by `client_id`:
+- pick the librdkafka client → the **Standard** panels are populated, the **Extended** panels are empty (it only emits the standard set);
+- pick the Java client (`perf-producer-client` / `console-consumer`) → everything is populated.
+
+The profile is self-contained: an init step (re)creates the `quickstart-clients` subscription, so it works regardless of whether the Java `demo` is running. (The brokers don't persist cluster metadata, so the subscription can vanish after a broker recreate — the init step puts it back. Allow ~1 minute after start for the client to fetch the subscription before its metrics appear.) Stop it with `docker compose --project-directory quickstart stop demo-librdkafka`.
 
 ### Stop the stack
 

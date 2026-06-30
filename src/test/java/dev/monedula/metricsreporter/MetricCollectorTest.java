@@ -175,4 +175,28 @@ class MetricCollectorTest {
                 "failure count was " + collector.exportFailureCount() + ", expected >= 3");
         assertEquals(0, collector.exportSuccessCount(), "no successes expected, got " + collector.exportSuccessCount());
     }
+
+    @Test
+    void emits_client_telemetry_self_metrics_when_counters_present() {
+        ArgumentCaptor<Collection<MetricData>> batch = ArgumentCaptor.forClass(Collection.class);
+        MetricExporter exporter = Mockito.mock(MetricExporter.class);
+        when(exporter.export(batch.capture())).thenReturn(CompletableResultCode.ofSuccess());
+        when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
+
+        // long interval so the scheduler won't fire on its own; we drive a single tick via exportOnceForTest()
+        MetricCollector collector = new MetricCollector(
+                new MetricRegistry(List.of()), new MetricDataMapper(Map.of()), exporter, 60_000L, 1_000L);
+        collector.setClientTelemetryCounters(() -> new long[] {7L, 5L, 2L, 1L, 3L});
+        try {
+            collector.exportOnceForTest();
+            var names = batch.getValue().stream().map(MetricData::getName).collect(Collectors.toSet());
+            assertTrue(names.contains("monedula_reporter_clienttelemetry_received_total"));
+            assertTrue(names.contains("monedula_reporter_clienttelemetry_forwarded_total"));
+            assertTrue(names.contains("monedula_reporter_clienttelemetry_dropped_total"));
+            assertTrue(names.contains("monedula_reporter_clienttelemetry_unsupported_metrics_dropped_total"));
+            assertTrue(names.contains("monedula_reporter_clienttelemetry_queue_depth"));
+        } finally {
+            collector.stop();
+        }
+    }
 }

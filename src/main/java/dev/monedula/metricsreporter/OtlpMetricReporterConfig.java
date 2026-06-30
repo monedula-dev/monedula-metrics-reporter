@@ -43,6 +43,21 @@ public class OtlpMetricReporterConfig {
     public static final String CLIENT_KEY_PATH = "otlp.metric.reporter.client.key.path";
     /** Whether to also export JVM runtime metrics. Default: {@code true}. */
     public static final String JVM_METRICS_ENABLED = "otlp.metric.reporter.jvm.metrics.enabled";
+    /** Kill-switch for KIP-714 client telemetry. When false, clientReceiver() returns null. Default: {@code true}. */
+    public static final String CLIENT_TELEMETRY_ENABLED = "otlp.metric.reporter.client.telemetry.enabled";
+    /** Add broker identity (cluster/node) to forwarded client metrics. Default: {@code true}. */
+    public static final String CLIENT_TELEMETRY_ENRICH_BROKER = "otlp.metric.reporter.client.telemetry.enrich.broker";
+    /** Add authenticated principal + client address to forwarded client metrics (PII/cardinality). Default: {@code false}. */
+    public static final String CLIENT_TELEMETRY_ENRICH_CLIENT_IDENTITY =
+            "otlp.metric.reporter.client.telemetry.enrich.client.identity";
+    /** Add client_id to forwarded client metrics as a resource attribute. Default: {@code true}. */
+    public static final String CLIENT_TELEMETRY_ENRICH_CLIENT_ID =
+            "otlp.metric.reporter.client.telemetry.enrich.client.id";
+    /** Add client_instance_id to forwarded client metrics as a resource attribute (opt-in). Default: {@code false}. */
+    public static final String CLIENT_TELEMETRY_ENRICH_CLIENT_INSTANCE_ID =
+            "otlp.metric.reporter.client.telemetry.enrich.client.instance.id";
+    /** Bounded in-memory queue size for inbound client pushes; overflow drops. Default: {@code 1024}. */
+    public static final String CLIENT_TELEMETRY_QUEUE_CAPACITY = "otlp.metric.reporter.client.telemetry.queue.capacity";
 
     public static final String TRANSPORT_GRPC = "grpc";
     public static final String TRANSPORT_HTTP = "http";
@@ -69,7 +84,13 @@ public class OtlpMetricReporterConfig {
             Map.entry(TRUSTED_CERTIFICATES_PATH, ""),
             Map.entry(CLIENT_CERTIFICATE_PATH, ""),
             Map.entry(CLIENT_KEY_PATH, ""),
-            Map.entry(JVM_METRICS_ENABLED, "true"));
+            Map.entry(JVM_METRICS_ENABLED, "true"),
+            Map.entry(CLIENT_TELEMETRY_ENABLED, "true"),
+            Map.entry(CLIENT_TELEMETRY_ENRICH_BROKER, "true"),
+            Map.entry(CLIENT_TELEMETRY_ENRICH_CLIENT_IDENTITY, "false"),
+            Map.entry(CLIENT_TELEMETRY_ENRICH_CLIENT_ID, "true"),
+            Map.entry(CLIENT_TELEMETRY_ENRICH_CLIENT_INSTANCE_ID, "false"),
+            Map.entry(CLIENT_TELEMETRY_QUEUE_CAPACITY, "1024"));
 
     /**
      * Canonical map of every configuration key this class understands to its default
@@ -97,6 +118,12 @@ public class OtlpMetricReporterConfig {
     private final String clientCertificatePath;
     private final String clientKeyPath;
     private final boolean jvmMetricsEnabled;
+    private final boolean clientTelemetryEnabled;
+    private final boolean clientTelemetryEnrichBroker;
+    private final boolean clientTelemetryEnrichClientIdentity;
+    private final boolean clientTelemetryEnrichClientId;
+    private final boolean clientTelemetryEnrichClientInstanceId;
+    private final int clientTelemetryQueueCapacity;
 
     public OtlpMetricReporterConfig(Map<String, ?> configs) {
         this.transport = getString(configs, TRANSPORT, TRANSPORT_GRPC);
@@ -116,6 +143,15 @@ public class OtlpMetricReporterConfig {
         this.clientCertificatePath = getOptionalString(configs, CLIENT_CERTIFICATE_PATH);
         this.clientKeyPath = getOptionalString(configs, CLIENT_KEY_PATH);
         this.jvmMetricsEnabled = getBoolean(configs, JVM_METRICS_ENABLED, true);
+        this.clientTelemetryEnabled = getBoolean(configs, CLIENT_TELEMETRY_ENABLED, true);
+        this.clientTelemetryEnrichBroker = getBoolean(configs, CLIENT_TELEMETRY_ENRICH_BROKER, true);
+        this.clientTelemetryEnrichClientIdentity = getBoolean(configs, CLIENT_TELEMETRY_ENRICH_CLIENT_IDENTITY, false);
+        this.clientTelemetryEnrichClientId = getBoolean(configs, CLIENT_TELEMETRY_ENRICH_CLIENT_ID, true);
+        this.clientTelemetryEnrichClientInstanceId =
+                getBoolean(configs, CLIENT_TELEMETRY_ENRICH_CLIENT_INSTANCE_ID, false);
+        // Safe narrowing: validate() rejects non-positive values, and realistic queue
+        // capacities are far below Integer.MAX_VALUE, so the long->int cast cannot overflow in practice.
+        this.clientTelemetryQueueCapacity = (int) getLong(configs, CLIENT_TELEMETRY_QUEUE_CAPACITY, 1024L);
         validate(parsedEndpoint);
     }
 
@@ -138,6 +174,9 @@ public class OtlpMetricReporterConfig {
         // Require strict headroom so the scheduler always has a window to start the next tick.
         if (timeoutMs >= intervalMs) {
             throw new ConfigException(TIMEOUT_MS, timeoutMs, "must be < " + INTERVAL_MS + " (" + intervalMs + ")");
+        }
+        if (clientTelemetryQueueCapacity <= 0) {
+            throw new ConfigException(CLIENT_TELEMETRY_QUEUE_CAPACITY, clientTelemetryQueueCapacity, "must be > 0");
         }
         if ((clientCertificatePath == null) != (clientKeyPath == null)) {
             throw new ConfigException(
@@ -304,5 +343,29 @@ public class OtlpMetricReporterConfig {
 
     public boolean jvmMetricsEnabled() {
         return jvmMetricsEnabled;
+    }
+
+    public boolean clientTelemetryEnabled() {
+        return clientTelemetryEnabled;
+    }
+
+    public boolean clientTelemetryEnrichBroker() {
+        return clientTelemetryEnrichBroker;
+    }
+
+    public boolean clientTelemetryEnrichClientIdentity() {
+        return clientTelemetryEnrichClientIdentity;
+    }
+
+    public boolean clientTelemetryEnrichClientId() {
+        return clientTelemetryEnrichClientId;
+    }
+
+    public boolean clientTelemetryEnrichClientInstanceId() {
+        return clientTelemetryEnrichClientInstanceId;
+    }
+
+    public int clientTelemetryQueueCapacity() {
+        return clientTelemetryQueueCapacity;
     }
 }

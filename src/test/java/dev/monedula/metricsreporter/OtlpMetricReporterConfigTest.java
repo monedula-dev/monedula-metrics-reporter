@@ -60,6 +60,17 @@ class OtlpMetricReporterConfigTest {
         assertTrue(OtlpMetricReporterConfig.defaults().containsKey(OtlpMetricReporterConfig.CLIENT_CERTIFICATE_PATH));
         assertTrue(OtlpMetricReporterConfig.defaults().containsKey(OtlpMetricReporterConfig.CLIENT_KEY_PATH));
         assertTrue(OtlpMetricReporterConfig.defaults().containsKey(OtlpMetricReporterConfig.JVM_METRICS_ENABLED));
+        assertTrue(OtlpMetricReporterConfig.defaults().containsKey(OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENABLED));
+        assertTrue(OtlpMetricReporterConfig.defaults()
+                .containsKey(OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_BROKER));
+        assertTrue(OtlpMetricReporterConfig.defaults()
+                .containsKey(OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_IDENTITY));
+        assertTrue(OtlpMetricReporterConfig.defaults()
+                .containsKey(OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_ID));
+        assertTrue(OtlpMetricReporterConfig.defaults()
+                .containsKey(OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_INSTANCE_ID));
+        assertTrue(OtlpMetricReporterConfig.defaults()
+                .containsKey(OtlpMetricReporterConfig.CLIENT_TELEMETRY_QUEUE_CAPACITY));
     }
 
     @Test
@@ -267,5 +278,56 @@ class OtlpMetricReporterConfigTest {
                 .jvmMetricsEnabled());
         assertFalse(new OtlpMetricReporterConfig(Map.of("otlp.metric.reporter.jvm.metrics.enabled", "False"))
                 .jvmMetricsEnabled());
+    }
+
+    @Test
+    void client_telemetry_defaults() {
+        var cfg = new OtlpMetricReporterConfig(Map.of());
+        assertTrue(cfg.clientTelemetryEnabled());
+        assertTrue(cfg.clientTelemetryEnrichBroker());
+        assertFalse(cfg.clientTelemetryEnrichClientIdentity());
+        assertEquals(1024, cfg.clientTelemetryQueueCapacity());
+    }
+
+    @Test
+    void client_telemetry_overrides() {
+        var cfg = new OtlpMetricReporterConfig(Map.of(
+                OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENABLED, "false",
+                OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_BROKER, "false",
+                OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_IDENTITY, "true",
+                OtlpMetricReporterConfig.CLIENT_TELEMETRY_QUEUE_CAPACITY, "8"));
+        assertFalse(cfg.clientTelemetryEnabled());
+        assertFalse(cfg.clientTelemetryEnrichBroker());
+        assertTrue(cfg.clientTelemetryEnrichClientIdentity());
+        assertEquals(8, cfg.clientTelemetryQueueCapacity());
+    }
+
+    @Test
+    void client_telemetry_queue_capacity_must_be_positive() {
+        assertThrows(
+                ConfigException.class,
+                () -> new OtlpMetricReporterConfig(
+                        Map.of(OtlpMetricReporterConfig.CLIENT_TELEMETRY_QUEUE_CAPACITY, "0")));
+    }
+
+    @Test
+    void client_telemetry_enrich_client_id_defaults_to_true() {
+        var cfg = new OtlpMetricReporterConfig(Map.of());
+        assertTrue(cfg.clientTelemetryEnrichClientId());
+    }
+
+    @Test
+    void client_telemetry_enrich_client_instance_id_defaults_to_false() {
+        var cfg = new OtlpMetricReporterConfig(Map.of());
+        assertFalse(cfg.clientTelemetryEnrichClientInstanceId());
+    }
+
+    @Test
+    void client_telemetry_enrich_client_id_and_instance_id_can_be_overridden() {
+        var cfg = new OtlpMetricReporterConfig(Map.of(
+                OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_ID, "false",
+                OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_INSTANCE_ID, "true"));
+        assertFalse(cfg.clientTelemetryEnrichClientId());
+        assertTrue(cfg.clientTelemetryEnrichClientInstanceId());
     }
 }
