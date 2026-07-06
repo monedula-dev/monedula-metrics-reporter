@@ -8,6 +8,7 @@ import static org.mockito.Mockito.*;
 
 import io.opentelemetry.sdk.common.CompletableResultCode;
 import io.opentelemetry.sdk.metrics.data.MetricData;
+import io.opentelemetry.sdk.metrics.data.MetricDataType;
 import io.opentelemetry.sdk.metrics.export.MetricExporter;
 import java.util.Collection;
 import java.util.List;
@@ -174,5 +175,44 @@ class MetricCollectorTest {
                 collector.exportFailureCount() >= 3,
                 "failure count was " + collector.exportFailureCount() + ", expected >= 3");
         assertEquals(0, collector.exportSuccessCount(), "no successes expected, got " + collector.exportSuccessCount());
+    }
+
+    @Test
+    void emits_client_telemetry_self_metrics_when_counters_present() {
+        ArgumentCaptor<Collection<MetricData>> batch = ArgumentCaptor.forClass(Collection.class);
+        MetricExporter exporter = Mockito.mock(MetricExporter.class);
+        when(exporter.export(batch.capture())).thenReturn(CompletableResultCode.ofSuccess());
+        when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
+
+        // long interval so the scheduler won't fire on its own; we drive a single tick via exportOnceForTest()
+        MetricCollector collector = new MetricCollector(
+                new MetricRegistry(List.of()), new MetricDataMapper(Map.of()), exporter, 60_000L, 1_000L);
+        // Distinct value per counter so a transposed name-to-counter mapping fails the assertions below.
+        collector.setClientTelemetryCounters(() -> new MetricCollector.ClientTelemetryCounters(7L, 5L, 2L, 1L, 3L));
+        try {
+            collector.exportOnceForTest();
+            Collection<MetricData> metrics = batch.getValue();
+            assertEquals(7.0, selfMetricValue(metrics, "monedula_reporter_clienttelemetry_received_total"));
+            assertEquals(5.0, selfMetricValue(metrics, "monedula_reporter_clienttelemetry_forwarded_total"));
+            assertEquals(2.0, selfMetricValue(metrics, "monedula_reporter_clienttelemetry_dropped_total"));
+            assertEquals(
+                    1.0,
+                    selfMetricValue(metrics, "monedula_reporter_clienttelemetry_unsupported_metrics_dropped_total"));
+            assertEquals(3.0, selfMetricValue(metrics, "monedula_reporter_clienttelemetry_queue_depth"));
+        } finally {
+            collector.stop();
+        }
+    }
+
+    /** Value of the single data point of the named self-metric (sum or gauge) in the exported batch. */
+    private static double selfMetricValue(Collection<MetricData> batch, String name) {
+        MetricData md = batch.stream()
+                .filter(m -> m.getName().equals(name))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("metric not exported: " + name));
+        var points = md.getType() == MetricDataType.DOUBLE_SUM
+                ? md.getDoubleSumData().getPoints()
+                : md.getDoubleGaugeData().getPoints();
+        return points.iterator().next().getValue();
     }
 }

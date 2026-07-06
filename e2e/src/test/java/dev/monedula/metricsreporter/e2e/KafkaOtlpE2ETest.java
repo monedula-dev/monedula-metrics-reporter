@@ -11,11 +11,22 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.AlterConfigOp;
+import org.apache.kafka.clients.admin.Config;
+import org.apache.kafka.clients.admin.ConfigEntry;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -46,106 +57,123 @@ class KafkaOtlpE2ETest {
     /**
      * Fixed host port for Kafka's external listener. Using a fixed port avoids
      * the chicken-and-egg problem of needing to know the mapped port before
-     * setting ADVERTISED_LISTENERS in the container environment.
+     * setting ADVERTISED_LISTENERS in the container environment. Shared by both
+     * tests — safe because JUnit runs the methods of this class sequentially;
+     * enabling parallel execution would require distinct ports per test.
      */
     private static final int KAFKA_HOST_PORT = 49092;
+
+    /** The three-container observability stack shared by both tests. */
+    private record E2eStack(GenericContainer<?> collector, GenericContainer<?> prometheus, GenericContainer<?> kafka) {
+
+        String prometheusUrl() {
+            return "http://" + prometheus.getHost() + ":" + prometheus.getMappedPort(9090);
+        }
+
+        /** OTLP gRPC endpoint reachable from the test JVM (mapped host port). */
+        String collectorGrpcEndpointFromHost() {
+            return "http://" + collector.getHost() + ":" + collector.getMappedPort(4317);
+        }
+
+        void stopAll() {
+            if (kafka != null) kafka.stop();
+            if (prometheus != null) prometheus.stop();
+            if (collector != null) collector.stop();
+        }
+    }
+
+    /**
+     * Start the collector → Prometheus → Kafka(KRaft + plugin) stack on {@code network}.
+     * The container configuration is deliberately identical for every test in this class —
+     * keep changes here so the tests can't drift apart; {@code logSuffix} only disambiguates
+     * the per-test log-consumer names. Containers that already started are stopped again if
+     * a later one fails to start.
+     *
+     * <p>Collector first, because Prometheus scrapes its /metrics endpoint (port 8889) via the
+     * "otel-collector" network alias — that alias must exist before Prometheus's first scrape.
+     * Exposed: 4317 (OTLP gRPC receiver), 8889 (Prometheus pull endpoint). The pull-based path
+     * preserves # TYPE / # HELP, so /api/v1/metadata returns real types rather than "unknown".
+     *
+     * <p>Kafka: KafkaContainer from testcontainers only supports Confluent images, so we use
+     * GenericContainer with apache/kafka in KRaft mode. Two listeners: PLAINTEXT (9092) for
+     * internal Docker network traffic, EXTERNAL (19092) bound to {@link #KAFKA_HOST_PORT} so the
+     * test JVM can connect. The broker carries the OTLP plugin (stable-name JAR produced by the
+     * quickstartShadowJar task, avoiding a hard-coded version). timeout.ms is set below the 5s
+     * interval because OtlpMetricReporterConfig requires timeout.ms < interval.ms strictly.
+     */
+    private static E2eStack startStack(Network network, String logSuffix) {
+        GenericContainer<?> collector = null;
+        GenericContainer<?> prometheus = null;
+        GenericContainer<?> kafka = null;
+        try {
+            collector = new GenericContainer<>("otel/opentelemetry-collector-contrib:0.152.0")
+                    .withNetwork(network)
+                    .withNetworkAliases("otel-collector")
+                    .withCopyFileToContainer(
+                            MountableFile.forClasspathResource("otel-collector-e2e-config.yaml"),
+                            "/etc/otel-collector-config.yaml")
+                    .withCommand("--config=/etc/otel-collector-config.yaml")
+                    .withExposedPorts(4317, 8889)
+                    .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("otel-collector" + logSuffix)))
+                    .waitingFor(Wait.forLogMessage(".*Everything is ready.*", 1));
+            collector.start();
+
+            prometheus = new GenericContainer<>("prom/prometheus:v3.11.3")
+                    .withNetwork(network)
+                    .withNetworkAliases("prometheus")
+                    .withCopyFileToContainer(
+                            MountableFile.forClasspathResource("prometheus-e2e.yml"), "/etc/prometheus/prometheus.yml")
+                    .withCommand("--config.file=/etc/prometheus/prometheus.yml")
+                    .withExposedPorts(9090)
+                    .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("prometheus" + logSuffix)))
+                    .waitingFor(Wait.forHttp("/-/ready").forPort(9090));
+            prometheus.start();
+
+            kafka = new GenericContainer<>("apache/kafka:4.2.0")
+                    .withNetwork(network)
+                    .withNetworkAliases("kafka")
+                    .withEnv("KAFKA_NODE_ID", "1")
+                    .withEnv("KAFKA_PROCESS_ROLES", "broker,controller")
+                    .withEnv(
+                            "KAFKA_LISTENERS",
+                            "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:19092")
+                    .withEnv(
+                            "KAFKA_ADVERTISED_LISTENERS",
+                            "PLAINTEXT://kafka:9092,EXTERNAL://localhost:" + KAFKA_HOST_PORT)
+                    .withEnv(
+                            "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP",
+                            "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT")
+                    .withEnv("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@kafka:9093")
+                    .withEnv("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER")
+                    .withEnv("KAFKA_INTER_BROKER_LISTENER_NAME", "PLAINTEXT")
+                    // Plugin in the broker: exports broker-side metrics (SPI + Yammer) and receives
+                    // KIP-714 client pushes, all forwarded to the collector over OTLP.
+                    .withEnv("KAFKA_METRIC_REPORTERS", "dev.monedula.metricsreporter.OtlpMetricReporter")
+                    .withEnv("KAFKA_OTLP_METRIC_REPORTER_ENDPOINT", "http://otel-collector:4317")
+                    .withEnv("KAFKA_OTLP_METRIC_REPORTER_TRANSPORT", "grpc")
+                    .withEnv("KAFKA_OTLP_METRIC_REPORTER_INTERVAL_MS", "5000")
+                    .withEnv("KAFKA_OTLP_METRIC_REPORTER_TIMEOUT_MS", "3000")
+                    .withCopyFileToContainer(
+                            MountableFile.forHostPath("../build/quickstart-libs/monedula-metrics-reporter.jar"),
+                            "/opt/kafka/libs/monedula-metrics-reporter.jar")
+                    .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("kafka" + logSuffix)))
+                    .waitingFor(Wait.forLogMessage(".*Kafka Server started.*", 1));
+            kafka.setPortBindings(List.of(KAFKA_HOST_PORT + ":19092"));
+            kafka.start();
+
+            return new E2eStack(collector, prometheus, kafka);
+        } catch (RuntimeException e) {
+            new E2eStack(collector, prometheus, kafka).stopAll();
+            throw e;
+        }
+    }
 
     @Test
     void kafka_producer_metrics_appear_in_prometheus() throws Exception {
         try (Network network = Network.newNetwork()) {
-            GenericContainer<?> prometheus = null;
-            GenericContainer<?> collector = null;
-            GenericContainer<?> kafka = null;
+            E2eStack stack = startStack(network, "");
             try {
-                // --- OTLP Collector ---
-                // Start the collector first because Prometheus scrapes its
-                // /metrics endpoint (port 8889) via the "otel-collector"
-                // network alias — that alias must exist before Prometheus
-                // starts its first scrape attempt.
-                //
-                // We expose:
-                //   4317 - OTLP gRPC receiver (Kafka broker + test JVM push to it)
-                //   8889 - Prometheus /metrics endpoint (pull-based pipeline)
-                collector = new GenericContainer<>("otel/opentelemetry-collector-contrib:0.152.0")
-                        .withNetwork(network)
-                        .withNetworkAliases("otel-collector")
-                        .withCopyFileToContainer(
-                                MountableFile.forClasspathResource("otel-collector-e2e-config.yaml"),
-                                "/etc/otel-collector-config.yaml")
-                        .withCommand("--config=/etc/otel-collector-config.yaml")
-                        .withExposedPorts(4317, 8889)
-                        .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("otel-collector")))
-                        .waitingFor(Wait.forLogMessage(".*Everything is ready.*", 1));
-                collector.start();
-
-                // --- Prometheus ---
-                // Scrapes the collector's prometheus exporter (port 8889).
-                // This pull-based path preserves # TYPE / # HELP, so
-                // /api/v1/metadata returns gauge/counter rather than "unknown".
-                prometheus = new GenericContainer<>("prom/prometheus:v3.11.3")
-                        .withNetwork(network)
-                        .withNetworkAliases("prometheus")
-                        .withCopyFileToContainer(
-                                MountableFile.forClasspathResource("prometheus-e2e.yml"),
-                                "/etc/prometheus/prometheus.yml")
-                        .withCommand("--config.file=/etc/prometheus/prometheus.yml")
-                        .withExposedPorts(9090)
-                        .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("prometheus")))
-                        .waitingFor(Wait.forHttp("/-/ready").forPort(9090));
-                prometheus.start();
-
-                // gRPC endpoint reachable from the test JVM (mapped host port)
-                String collectorEndpointFromHost =
-                        "http://" + collector.getHost() + ":" + collector.getMappedPort(4317);
-
-                // --- Kafka (KRaft, apache/kafka:4.2.0) with plugin ---
-                // KafkaContainer from testcontainers:kafka 1.19.8 only supports Confluent images,
-                // so we use GenericContainer with apache/kafka in KRaft mode instead.
-                //
-                // We expose two listeners:
-                //   PLAINTEXT (9092) - for internal Docker network traffic
-                //   EXTERNAL  (19092) - bound to a fixed host port so the test JVM can connect
-                //
-                // The broker is configured with the OTLP plugin so it sends its own broker
-                // metrics to the collector. The test producer is separately configured below
-                // to also use the plugin.
-                kafka = new GenericContainer<>("apache/kafka:4.2.0")
-                        .withNetwork(network)
-                        .withNetworkAliases("kafka")
-                        .withEnv("KAFKA_NODE_ID", "1")
-                        .withEnv("KAFKA_PROCESS_ROLES", "broker,controller")
-                        .withEnv(
-                                "KAFKA_LISTENERS",
-                                "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:19092")
-                        .withEnv(
-                                "KAFKA_ADVERTISED_LISTENERS",
-                                "PLAINTEXT://kafka:9092,EXTERNAL://localhost:" + KAFKA_HOST_PORT)
-                        .withEnv(
-                                "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP",
-                                "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT")
-                        .withEnv("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@kafka:9093")
-                        .withEnv("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER")
-                        .withEnv("KAFKA_INTER_BROKER_LISTENER_NAME", "PLAINTEXT")
-                        // Plugin in the broker - sends broker-side metrics to collector
-                        // (both Kafka SPI and Yammer/Coda Hale registries — single reporter handles both).
-                        .withEnv("KAFKA_METRIC_REPORTERS", "dev.monedula.metricsreporter.OtlpMetricReporter")
-                        .withEnv("KAFKA_OTLP_METRIC_REPORTER_ENDPOINT", "http://otel-collector:4317")
-                        .withEnv("KAFKA_OTLP_METRIC_REPORTER_TRANSPORT", "grpc")
-                        .withEnv("KAFKA_OTLP_METRIC_REPORTER_INTERVAL_MS", "5000")
-                        // OtlpMetricReporterConfig requires timeout.ms < interval.ms strictly.
-                        // The default timeout (5000) equals our test interval, so set it lower.
-                        .withEnv("KAFKA_OTLP_METRIC_REPORTER_TIMEOUT_MS", "3000")
-                        .withCopyFileToContainer(
-                                // Stable-name JAR produced by the quickstartShadowJar task that
-                                // finalises shadowJar — avoids hard-coding the project version here.
-                                // Lives in a separate build dir so it doesn't collide with the
-                                // versioned shadowJar output that release publishing consumes.
-                                MountableFile.forHostPath("../build/quickstart-libs/monedula-metrics-reporter.jar"),
-                                "/opt/kafka/libs/monedula-metrics-reporter.jar")
-                        .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("kafka")))
-                        .waitingFor(Wait.forLogMessage(".*Kafka Server started.*", 1));
-                kafka.setPortBindings(List.of(KAFKA_HOST_PORT + ":19092"));
-                kafka.start();
+                String collectorEndpointFromHost = stack.collectorGrpcEndpointFromHost();
 
                 // --- Produce messages to generate producer-side metrics ---
                 // The KafkaProducer is also configured with our OTLP metric reporter so that
@@ -180,7 +208,7 @@ class KafkaOtlpE2ETest {
                 // --- Assert producer metric appears in Prometheus ---
                 // Task A switched to empty units so Prometheus no longer appends "_ratio";
                 // we still accept both names for forward/backward tolerance.
-                String prometheusUrl = "http://" + prometheus.getHost() + ":" + prometheus.getMappedPort(9090);
+                String prometheusUrl = stack.prometheusUrl();
                 String[] producerCandidates = {
                     // The test-JVM producer uses our reporter, and Kafka sets
                     // _namespace="kafka.producer" on the client side, so the SPI
@@ -291,9 +319,150 @@ class KafkaOtlpE2ETest {
                         "Expected kafka_controller_kafkacontroller_activecontrollercount "
                                 + "to have type=gauge metadata, got: " + mdResponse.body());
             } finally {
-                if (kafka != null) kafka.stop();
-                if (prometheus != null) prometheus.stop();
-                if (collector != null) collector.stop();
+                stack.stopAll();
+            }
+        }
+    }
+
+    /**
+     * End-to-end test for KIP-714 client telemetry: a producer with
+     * {@code enable.metrics.push=true} pushes its own OTLP telemetry to the broker via
+     * the KIP-714 PushTelemetry RPC. The broker's plugin receiver forwards each payload to
+     * the OTel collector (also used by the existing test). The enriched series must arrive
+     * in Prometheus carrying the {@code kafka_cluster_id} label added by the broker's
+     * ClientMetricsEnricher.
+     *
+     * <p>Pipeline under test:
+     *   KafkaProducer (KIP-714 push, no OtlpMetricReporter on the client side)
+     *     → broker ClientTelemetryReceiverImpl (our plugin, broker side)
+     *     → ClientTelemetryForwarder → OtlpExporter
+     *     → OpenTelemetry Collector (OTLP gRPC, prometheus pull exporter on :8889)
+     *     ← Prometheus (scrapes collector)
+     */
+    @Test
+    void kip714_client_telemetry_lands_in_prometheus_with_cluster_id_label() throws Exception {
+        try (Network network = Network.newNetwork()) {
+            // Same stack as the producer test; the broker has client telemetry enabled by default
+            // (CLIENT_TELEMETRY_ENABLED=true). The plugin's ClientTelemetryReceiverImpl sits idle
+            // until a subscription is created; after that Kafka tells each connecting client what
+            // to push and how often.
+            E2eStack stack = startStack(network, "-kip714");
+            try {
+                // --- Step 1: Create a client-metrics subscription via AdminClient ---
+                // This is what activates KIP-714 on the broker: without a subscription the broker
+                // returns an empty GetTelemetrySubscriptions response and clients don't push.
+                // ConfigResource.Type.CLIENT_METRICS is available since Kafka 3.7 (KIP-714).
+                //
+                // The "metrics" value MUST be "*" to subscribe to ALL client metrics. Kafka 4.2.0's
+                // ClientMetricsConfigs defines ALL_SUBSCRIBED_METRICS = "*" and METRICS_DEFAULT =
+                // List.of() (empty). An empty string therefore selects NO metrics, so clients
+                // complete the GetTelemetrySubscriptions handshake but never push — which is exactly
+                // the false-positive trap an earlier version of this test fell into.
+                Properties adminProps = new Properties();
+                adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + KAFKA_HOST_PORT);
+                ConfigResource sub = new ConfigResource(ConfigResource.Type.CLIENT_METRICS, "e2e-sub");
+                try (Admin admin = Admin.create(adminProps)) {
+                    Collection<AlterConfigOp> ops = List.of(
+                            // "*" = subscribe to ALL client metrics (ClientMetricsConfigs.ALL_SUBSCRIBED_METRICS).
+                            new AlterConfigOp(new ConfigEntry("metrics", "*"), AlterConfigOp.OpType.SET),
+                            // Push every 5 seconds; clients push on this interval once subscribed.
+                            new AlterConfigOp(new ConfigEntry("interval.ms", "5000"), AlterConfigOp.OpType.SET));
+                    admin.incrementalAlterConfigs(Map.of(sub, ops))
+                            .all()
+                            .get(30, java.util.concurrent.TimeUnit.SECONDS);
+
+                    // Confirm the subscription is fully applied BEFORE clients connect: describe the
+                    // CLIENT_METRICS resource and assert it shows our values. This rules out a race
+                    // where clients do GetTelemetrySubscriptions before the config has propagated.
+                    Config applied = admin.describeConfigs(List.of(sub))
+                            .all()
+                            .get(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .get(sub);
+                    ConfigEntry metricsEntry = applied.get("metrics");
+                    ConfigEntry intervalEntry = applied.get("interval.ms");
+                    assertTrue(
+                            metricsEntry != null && "*".equals(metricsEntry.value()),
+                            "Expected CLIENT_METRICS subscription 'metrics' = '*', got: " + metricsEntry);
+                    assertTrue(
+                            intervalEntry != null && "5000".equals(intervalEntry.value()),
+                            "Expected CLIENT_METRICS subscription 'interval.ms' = '5000', got: " + intervalEntry);
+                }
+
+                // --- Step 2: Run a producer and consumer with KIP-714 push enabled ---
+                // These are plain Kafka clients — no OtlpMetricReporter on the client side.
+                // They push their OTLP telemetry to the broker via PushTelemetry, which our
+                // plugin receives. enable.metrics.push is true by default, set explicitly for clarity.
+                Properties producerProps = new Properties();
+                producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + KAFKA_HOST_PORT);
+                producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+                producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+                producerProps.put("enable.metrics.push", "true");
+
+                Properties consumerProps = new Properties();
+                consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + KAFKA_HOST_PORT);
+                consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "e2e-kip714-group");
+                consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+                consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+                consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+                consumerProps.put("enable.metrics.push", "true");
+
+                // Keep both clients alive comfortably longer than interval.ms (5s) — produce/consume
+                // real traffic for ~30s so each client refreshes subscriptions, accumulates metrics,
+                // and performs several PushTelemetry calls. We poll in a loop rather than sleeping so
+                // the clients stay active (heartbeats, fetches) the whole time.
+                String prometheusUrl = stack.prometheusUrl();
+                try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps);
+                        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps)) {
+                    consumer.subscribe(List.of("kip714-test-topic"));
+                    long kip714DeadlineMs = System.currentTimeMillis() + 30_000;
+                    int sent = 0;
+                    while (System.currentTimeMillis() < kip714DeadlineMs) {
+                        producer.send(new ProducerRecord<>("kip714-test-topic", "k-" + sent, "v-" + sent));
+                        sent++;
+                        consumer.poll(Duration.ofMillis(500));
+                    }
+                    producer.flush();
+                }
+
+                // --- Step 3a (PRIMARY proof): our forwarder actually forwarded a client push ---
+                // monedula_reporter_clienttelemetry_forwarded_total is emitted by OUR
+                // ClientTelemetryForwarder and is only nonzero if our broker-side
+                // ClientTelemetryReceiverImpl received a client payload AND the forwarder exported it.
+                // This is the unambiguous gate: it would stay 0 if the receiver were deleted. An
+                // earlier version of this test passed without this gate (a broker SPI series happened
+                // to carry kafka_cluster_id), so this assertion is what makes the test a TRUE proof.
+                assertTrue(
+                        awaitLabeledMetric(
+                                prometheusUrl,
+                                "monedula_reporter_clienttelemetry_forwarded_total > 0",
+                                Duration.ofSeconds(60)),
+                        "Expected monedula_reporter_clienttelemetry_forwarded_total > 0 — our KIP-714 "
+                                + "receiver/forwarder never forwarded a client telemetry payload (clients "
+                                + "are not pushing, or the receiver is broken)");
+
+                // --- Step 3b (enrichment proof): a CLIENT-ONLY series carries the broker cluster id ---
+                // The KIP-714 client pushes metrics under the org.apache.kafka.producer.* and
+                // org.apache.kafka.consumer.* namespaces (verified against the live collector at
+                // detailed verbosity). The broker's own SPI metrics only ever use the
+                // org.apache.kafka.server.* namespace, so org_apache_kafka_(producer|consumer)_*
+                // series can ONLY come from a client push through our forwarder — there is no broker
+                // series that matches. Requiring kafka_cluster_id!="" on top proves our enricher
+                // attached the broker identity to the client-originated series.
+                //
+                // (We deliberately do NOT key on client_instance_id: the client does not place it in
+                // the OTLP resource attributes our converter sees — the pushed resource only carries
+                // the broker enrichment our plugin adds — so the namespace split is the reliable
+                // client/broker discriminator here.)
+                assertTrue(
+                        awaitLabeledMetric(
+                                prometheusUrl,
+                                "{__name__=~\"org_apache_kafka_(producer|consumer)_.*\",kafka_cluster_id!=\"\"}",
+                                Duration.ofSeconds(60)),
+                        "Expected at least one client-originated org_apache_kafka_(producer|consumer)_* "
+                                + "series (a namespace only KIP-714 clients emit, never the broker) carrying "
+                                + "kafka_cluster_id — proves a client push reached Prometheus with broker enrichment");
+            } finally {
+                stack.stopAll();
             }
         }
     }
