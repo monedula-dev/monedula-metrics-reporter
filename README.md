@@ -58,12 +58,56 @@ multiplying e2e by every cell would add runtime without adding coverage.
 
 ## Installation
 
-```bash
-# Build the shadow JAR
-./gradlew shadowJar
+The plugin ships as a single relocated ("shadow") JAR — drop it anywhere on
+Kafka's classpath (the broker's `libs/` directory is the usual spot). Released
+versions are published to **Maven Central**, **GitHub Packages**, and each
+**GitHub Release**, so there's no need to build from source. Prefer to build it
+yourself anyway? See [Building from source](#building-from-source).
 
+### Download the plugin JAR
+
+Pick whichever source fits your environment. Replace `0.10.0` with the
+[latest release](https://github.com/monedula-dev/monedula-metrics-reporter/releases/latest)
+if a newer one exists.
+
+**Maven Central** — no authentication, direct download:
+
+```bash
+VERSION=0.10.0
+curl -L -o monedula-metrics-reporter-${VERSION}.jar \
+  https://repo1.maven.org/maven2/dev/monedula/monedula-metrics-reporter/${VERSION}/monedula-metrics-reporter-${VERSION}.jar
+```
+
+The published main artifact is the relocated shadow JAR — the same file the
+build produces — under coordinates `dev.monedula:monedula-metrics-reporter`, so
+tooling that resolves JARs for you (Coursier, `mvn dependency:get`, etc.) can
+fetch it directly:
+
+```bash
+mvn dependency:get -Dartifact=dev.monedula:monedula-metrics-reporter:0.10.0
+```
+
+**GitHub Release** — the same JAR, plus a CycloneDX SBOM and Sigstore
+`.sig`/`.pem` provenance files you can verify with `cosign` (see
+[Verifying a release artifact](RELEASING.md#verifying-a-release-artifact-for-consumers)):
+
+```bash
+VERSION=0.10.0
+curl -L -o monedula-metrics-reporter-${VERSION}.jar \
+  https://github.com/monedula-dev/monedula-metrics-reporter/releases/download/v${VERSION}/monedula-metrics-reporter-${VERSION}.jar
+```
+
+**GitHub Packages** — the same coordinates are also served from
+<https://github.com/orgs/monedula-dev/packages?repo_name=monedula-metrics-reporter>.
+GitHub's Maven registry requires a personal access token (`read:packages`) to
+resolve, so this suits builds already authenticated against GitHub Packages;
+otherwise reach for Maven Central above.
+
+### Put it on Kafka's classpath
+
+```bash
 # Copy into Kafka's libs/ directory (or anywhere on Kafka's classpath)
-cp build/libs/monedula-metrics-reporter-0.1.0.jar $KAFKA_HOME/libs/
+cp monedula-metrics-reporter-0.10.0.jar $KAFKA_HOME/libs/
 ```
 
 Then add to `server.properties` (broker) or producer/consumer config:
