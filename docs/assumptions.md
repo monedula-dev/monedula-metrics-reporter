@@ -33,6 +33,13 @@ details.
   Missing header values or unreadable certificate/key files are operator
   mistakes, so they should be logged clearly while still preserving Kafka
   availability through no-op degradation.
+- The registries hold references to every Kafka metric the broker announces,
+  not just the allow-listed subset. Memory stays bounded by the broker's own
+  metric count (references, not copies), and the allow-list is applied at
+  export time rather than at ingest. This is what lets a dynamic widening of
+  `allowed.metrics` resurrect metrics Kafka announced only once at startup,
+  without any re-registration, and it keeps regex matching off Kafka's hot
+  metric-callback path.
 
 ## Metric Model Assumptions
 
@@ -61,6 +68,14 @@ details.
   are reporter concerns because they affect the immediate OTLP connection.
   Credential rotation, retries, fan-out, and backend routing remain collector
   concerns.
+- Connection settings — endpoint, transport, headers, TLS paths, and the
+  timing/queue tunables (`interval.ms`, `timeout.ms`, queue capacity) — are
+  static by design and change only on a JVM restart. Metric filtering
+  (`allowed.metrics`) and the client-telemetry enrichment toggles
+  (`client.telemetry.enrich.*`) are dynamically reconfigurable at runtime via
+  KIP-226 dynamic broker configuration; invalid values are rejected when the
+  operator alters them, so the running pipeline is never disrupted by a bad
+  change.
 - The quickstart uses the collector's Prometheus exporter and Prometheus pull
   scraping so metric type metadata is preserved.
 - In environments where Prometheus cannot scrape the collector, remote write

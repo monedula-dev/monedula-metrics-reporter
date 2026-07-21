@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Live reconfiguration of metric filtering and client-telemetry enrichment via
+  Kafka dynamic broker configuration (KIP-226): `OtlpMetricReporter` now
+  implements `Reconfigurable`, so `otlp.metric.reporter.allowed.metrics` and the
+  four `otlp.metric.reporter.client.telemetry.enrich.*` toggles (`.broker`,
+  `.client.identity`, `.client.id`, `.client.instance.id`) can be changed at
+  runtime with `kafka-configs.sh --entity-type brokers --alter` (or an
+  AdminClient `incrementalAlterConfigs`) — no broker restart. Changes apply
+  cluster-wide (`--entity-default`) or per broker (`--entity-name`), persist in
+  cluster metadata, override `server.properties`, and are removed with
+  `--delete-config`. Invalid values (a bad regex or non-boolean toggle) are
+  rejected by the `--alter` command itself: the broker validates before applying,
+  so a bad change never touches the running export pipeline. All other
+  `otlp.metric.reporter.*` keys remain static and require a restart.
+
+### Changed
+
+- Allow-list filtering now happens at export time on the collector's daemon
+  thread instead of at ingest in the registries. The registries retain
+  references to every Kafka metric the broker announces (memory stays bounded by
+  the broker's own metric count), which lets a dynamic widening of
+  `allowed.metrics` resurrect metrics Kafka announced only once at startup. As a
+  side effect, regex matching no longer runs on Kafka's hot metric-callback path.
+
 ## [0.10.0] - 2026-07-10
 
 ### Added
