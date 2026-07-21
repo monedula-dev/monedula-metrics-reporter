@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.metrics.KafkaMetric;
@@ -43,7 +44,7 @@ class MetricCollectorTest {
         });
         when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
 
-        MetricRegistry registry = new MetricRegistry(List.of());
+        MetricRegistry registry = new MetricRegistry();
         registry.update(metric("producer-metrics", "record-send-rate", 1.0));
 
         var mapper = new MetricDataMapper(Map.of());
@@ -64,7 +65,7 @@ class MetricCollectorTest {
         });
         when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
 
-        MetricRegistry registry = new MetricRegistry(List.of());
+        MetricRegistry registry = new MetricRegistry();
         registry.update(metric("producer-metrics", "record-send-rate", 1.0));
 
         var mapper = new MetricDataMapper(Map.of());
@@ -90,7 +91,7 @@ class MetricCollectorTest {
         when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
 
         MetricCollector collector =
-                new MetricCollector(new MetricRegistry(List.of()), new MetricDataMapper(Map.of()), exporter, 50L, 500L);
+                new MetricCollector(new MetricRegistry(), new MetricDataMapper(Map.of()), exporter, 50L, 500L);
         collector.start();
         assertTrue(
                 latch.await(3, TimeUnit.SECONDS), "scheduler stopped after an Error in a tick; export was not retried");
@@ -116,7 +117,7 @@ class MetricCollectorTest {
         when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
 
         MetricCollector collector =
-                new MetricCollector(new MetricRegistry(List.of()), new MetricDataMapper(Map.of()), exporter, 50L, 500L);
+                new MetricCollector(new MetricRegistry(), new MetricDataMapper(Map.of()), exporter, 50L, 500L);
         collector.start();
         assertTrue(latch.await(2, TimeUnit.SECONDS), "exporter was not called within 2s");
         collector.stop();
@@ -142,7 +143,7 @@ class MetricCollectorTest {
         when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
 
         MetricCollector collector =
-                new MetricCollector(new MetricRegistry(List.of()), new MetricDataMapper(Map.of()), exporter, 50L, 500L);
+                new MetricCollector(new MetricRegistry(), new MetricDataMapper(Map.of()), exporter, 50L, 500L);
         collector.start();
         assertTrue(latch.await(3, TimeUnit.SECONDS), "expected three exports within 3s");
         collector.stop();
@@ -166,7 +167,7 @@ class MetricCollectorTest {
         when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
 
         MetricCollector collector =
-                new MetricCollector(new MetricRegistry(List.of()), new MetricDataMapper(Map.of()), exporter, 50L, 500L);
+                new MetricCollector(new MetricRegistry(), new MetricDataMapper(Map.of()), exporter, 50L, 500L);
         collector.start();
         assertTrue(latch.await(3, TimeUnit.SECONDS), "expected three failed export attempts within 3s");
         collector.stop();
@@ -185,8 +186,8 @@ class MetricCollectorTest {
         when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
 
         // long interval so the scheduler won't fire on its own; we drive a single tick via exportOnceForTest()
-        MetricCollector collector = new MetricCollector(
-                new MetricRegistry(List.of()), new MetricDataMapper(Map.of()), exporter, 60_000L, 1_000L);
+        MetricCollector collector =
+                new MetricCollector(new MetricRegistry(), new MetricDataMapper(Map.of()), exporter, 60_000L, 1_000L);
         // Distinct value per counter so a transposed name-to-counter mapping fails the assertions below.
         collector.setClientTelemetryCounters(() -> new MetricCollector.ClientTelemetryCounters(7L, 5L, 2L, 1L, 3L));
         try {
@@ -202,6 +203,135 @@ class MetricCollectorTest {
         } finally {
             collector.stop();
         }
+    }
+
+    @Test
+    void allow_list_excludes_non_matching_spi_metric_from_export() {
+        ArgumentCaptor<Collection<MetricData>> batch = ArgumentCaptor.forClass(Collection.class);
+        MetricExporter exporter = Mockito.mock(MetricExporter.class);
+        when(exporter.export(batch.capture())).thenReturn(CompletableResultCode.ofSuccess());
+        when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
+
+        MetricRegistry registry = new MetricRegistry();
+        registry.update(metric("producer-metrics", "record-send-rate", 1.0));
+        registry.update(metric("consumer-metrics", "records-consumed-rate", 2.0));
+
+        MetricCollector collector =
+                new MetricCollector(registry, new MetricDataMapper(Map.of()), exporter, 60_000L, 1_000L);
+        collector.replaceAllowList(new AllowList(List.of(Pattern.compile("producer-metrics\\..*"))));
+        try {
+            collector.exportOnceForTest();
+            Set<String> names = exportedNames(batch.getValue());
+            assertTrue(names.contains("producer_metrics_record_send_rate"), "allowed metric should be present");
+            assertFalse(names.contains("consumer_metrics_records_consumed_rate"), "excluded metric should be absent");
+        } finally {
+            collector.stop();
+        }
+    }
+
+    @Test
+    void widening_the_allow_list_resurrects_a_previously_filtered_metric() {
+        // The scenario ingest-time filtering could never support: a metric stored in the
+        // registry but filtered out at export appears once the allow-list is widened — no
+        // re-registration from Kafka required.
+        ArgumentCaptor<Collection<MetricData>> batch = ArgumentCaptor.forClass(Collection.class);
+        MetricExporter exporter = Mockito.mock(MetricExporter.class);
+        when(exporter.export(batch.capture())).thenReturn(CompletableResultCode.ofSuccess());
+        when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
+
+        MetricRegistry registry = new MetricRegistry();
+        registry.update(metric("producer-metrics", "record-send-rate", 1.0));
+        registry.update(metric("consumer-metrics", "records-consumed-rate", 2.0));
+
+        MetricCollector collector =
+                new MetricCollector(registry, new MetricDataMapper(Map.of()), exporter, 60_000L, 1_000L);
+        collector.replaceAllowList(new AllowList(List.of(Pattern.compile("producer-metrics\\..*"))));
+        try {
+            collector.exportOnceForTest();
+            assertFalse(
+                    exportedNames(batch.getValue()).contains("consumer_metrics_records_consumed_rate"),
+                    "consumer metric should be filtered out under the narrow list");
+
+            // Widen to include consumer metrics — the stored-but-filtered metric now surfaces.
+            collector.replaceAllowList(
+                    new AllowList(List.of(Pattern.compile("producer-metrics\\..*"), Pattern.compile("consumer.*"))));
+            collector.exportOnceForTest();
+            Set<String> names = exportedNames(batch.getValue());
+            assertTrue(
+                    names.contains("consumer_metrics_records_consumed_rate"),
+                    "widened list should resurrect the previously-filtered metric");
+            assertTrue(names.contains("producer_metrics_record_send_rate"), "producer metric still present");
+        } finally {
+            collector.stop();
+        }
+    }
+
+    @Test
+    void narrowing_the_allow_list_drops_a_previously_exported_metric() {
+        ArgumentCaptor<Collection<MetricData>> batch = ArgumentCaptor.forClass(Collection.class);
+        MetricExporter exporter = Mockito.mock(MetricExporter.class);
+        when(exporter.export(batch.capture())).thenReturn(CompletableResultCode.ofSuccess());
+        when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
+
+        MetricRegistry registry = new MetricRegistry();
+        registry.update(metric("producer-metrics", "record-send-rate", 1.0));
+        registry.update(metric("consumer-metrics", "records-consumed-rate", 2.0));
+
+        MetricCollector collector =
+                new MetricCollector(registry, new MetricDataMapper(Map.of()), exporter, 60_000L, 1_000L);
+        // Default ALLOW_ALL: both present initially.
+        try {
+            collector.exportOnceForTest();
+            Set<String> before = exportedNames(batch.getValue());
+            assertTrue(before.contains("producer_metrics_record_send_rate"));
+            assertTrue(before.contains("consumer_metrics_records_consumed_rate"));
+
+            collector.replaceAllowList(new AllowList(List.of(Pattern.compile("producer-metrics\\..*"))));
+            collector.exportOnceForTest();
+            Set<String> after = exportedNames(batch.getValue());
+            assertTrue(after.contains("producer_metrics_record_send_rate"), "producer metric still present");
+            assertFalse(after.contains("consumer_metrics_records_consumed_rate"), "narrowed list should drop consumer");
+        } finally {
+            collector.stop();
+        }
+    }
+
+    @Test
+    void allow_list_filters_yammer_metrics_on_group_type_name_subject() {
+        ArgumentCaptor<Collection<MetricData>> batch = ArgumentCaptor.forClass(Collection.class);
+        MetricExporter exporter = Mockito.mock(MetricExporter.class);
+        when(exporter.export(batch.capture())).thenReturn(CompletableResultCode.ofSuccess());
+        when(exporter.shutdown()).thenReturn(CompletableResultCode.ofSuccess());
+
+        com.yammer.metrics.core.MetricsRegistry yammer = new com.yammer.metrics.core.MetricsRegistry();
+        yammer.newCounter(
+                new com.yammer.metrics.core.MetricName("kafka.server", "ReplicaManager", "UnderReplicatedPartitions"));
+        yammer.newCounter(new com.yammer.metrics.core.MetricName("kafka.network", "RequestMetrics", "RequestsPerSec"));
+        var yr = new dev.monedula.metricsreporter.yammer.YammerMetricRegistry();
+        yr.attach(yammer);
+
+        MetricCollector collector =
+                new MetricCollector(new MetricRegistry(), new MetricDataMapper(Map.of()), exporter, 60_000L, 1_000L);
+        collector.setYammer(yr, new dev.monedula.metricsreporter.yammer.YammerMetricDataMapper(Map.of()));
+        // Subject is {group}.{type}.{name}; only the kafka.server metric matches.
+        collector.replaceAllowList(new AllowList(List.of(Pattern.compile("kafka\\.server\\..*"))));
+        try {
+            collector.exportOnceForTest();
+            Set<String> names = exportedNames(batch.getValue());
+            assertTrue(
+                    names.contains("kafka_server_replicamanager_underreplicatedpartitions"),
+                    "kafka.server Yammer metric should pass the filter");
+            assertFalse(
+                    names.contains("kafka_network_requestmetrics_requestspersec"),
+                    "kafka.network Yammer metric should be filtered out");
+        } finally {
+            collector.stop();
+        }
+    }
+
+    /** Names of all metrics in the exported batch. */
+    private static Set<String> exportedNames(Collection<MetricData> batch) {
+        return batch.stream().map(MetricData::getName).collect(Collectors.toSet());
     }
 
     /** Value of the single data point of the named self-metric (sum or gauge) in the exported batch. */

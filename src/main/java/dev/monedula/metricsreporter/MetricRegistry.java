@@ -5,23 +5,22 @@ package dev.monedula.metricsreporter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.metrics.KafkaMetric;
 
+/**
+ * Holds the latest {@link KafkaMetric} object for every metric Kafka announces. Updated
+ * directly from Kafka's hot add/change/remove callbacks, which do pure in-memory map work —
+ * no filtering, no regex. Allow-list filtering happens later, on the export thread, in
+ * {@link MetricCollector}; this registry deliberately stores everything so a widened
+ * allow-list can resurrect metrics Kafka only ever announces once (e.g. via {@code init}).
+ */
 public class MetricRegistry {
 
-    private final AllowList allowList;
     private final ConcurrentHashMap<MetricName, KafkaMetric> metrics = new ConcurrentHashMap<>();
 
-    public MetricRegistry(List<Pattern> allowedPatterns) {
-        this.allowList = new AllowList(allowedPatterns);
-    }
-
     public void update(KafkaMetric metric) {
-        if (isAllowed(metric)) {
-            metrics.put(metric.metricName(), metric);
-        }
+        metrics.put(metric.metricName(), metric);
     }
 
     public void remove(KafkaMetric metric) {
@@ -51,10 +50,5 @@ public class MetricRegistry {
             }
         }
         return result;
-    }
-
-    private boolean isAllowed(KafkaMetric metric) {
-        return allowList.matches(
-                metric.metricName().group() + "." + metric.metricName().name());
     }
 }

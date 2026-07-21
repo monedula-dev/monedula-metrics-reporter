@@ -5,9 +5,7 @@ package dev.monedula.metricsreporter;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
-import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.junit.jupiter.api.Test;
@@ -23,41 +21,28 @@ class MetricRegistryTest {
         return m;
     }
 
-    private static List<Pattern> patterns(String... regexes) {
-        return List.of(regexes).stream().map(Pattern::compile).toList();
-    }
-
     @Test
-    void metric_is_stored_when_no_allow_list() {
-        MetricRegistry registry = new MetricRegistry(List.of());
+    void metric_is_stored() {
+        MetricRegistry registry = new MetricRegistry();
         registry.update(metric("producer-metrics", "record-send-rate", Map.of()));
         assertEquals(1, registry.snapshot().size());
     }
 
     @Test
-    void metric_is_stored_when_regex_matches_group_dot_name() {
-        MetricRegistry registry = new MetricRegistry(patterns("producer-metrics\\..*"));
+    void every_metric_is_stored_regardless_of_name() {
+        // The registry no longer filters; the allow-list is applied at export time by the
+        // collector. Even a metric that would match no configured pattern is stored here so a
+        // later live widening of the allow-list can resurrect it.
+        MetricRegistry registry = new MetricRegistry();
         registry.update(metric("producer-metrics", "record-send-rate", Map.of()));
-        assertEquals(1, registry.snapshot().size());
-    }
-
-    @Test
-    void metric_is_rejected_when_no_pattern_matches() {
-        MetricRegistry registry = new MetricRegistry(patterns("consumer.*"));
-        registry.update(metric("producer-metrics", "record-send-rate", Map.of()));
-        assertEquals(0, registry.snapshot().size());
-    }
-
-    @Test
-    void any_matching_pattern_allows_the_metric() {
-        MetricRegistry registry = new MetricRegistry(patterns("consumer.*", "producer.*"));
-        registry.update(metric("producer-metrics", "record-send-rate", Map.of()));
-        assertEquals(1, registry.snapshot().size());
+        registry.update(metric("consumer-metrics", "records-consumed-rate", Map.of()));
+        registry.update(metric("kafka.server", "some-obscure-metric", Map.of()));
+        assertEquals(3, registry.snapshot().size());
     }
 
     @Test
     void metric_is_removed() {
-        MetricRegistry registry = new MetricRegistry(List.of());
+        MetricRegistry registry = new MetricRegistry();
         KafkaMetric m = metric("producer-metrics", "record-send-rate", Map.of());
         registry.update(m);
         registry.remove(m);
@@ -66,7 +51,7 @@ class MetricRegistryTest {
 
     @Test
     void snapshot_returns_independent_copy() {
-        MetricRegistry registry = new MetricRegistry(List.of());
+        MetricRegistry registry = new MetricRegistry();
         KafkaMetric m = metric("producer-metrics", "record-send-rate", Map.of());
         registry.update(m);
         var snap = registry.snapshot();
@@ -76,7 +61,7 @@ class MetricRegistryTest {
 
     @Test
     void nan_metric_value_is_excluded_from_snapshot() {
-        MetricRegistry registry = new MetricRegistry(List.of());
+        MetricRegistry registry = new MetricRegistry();
         KafkaMetric m = metric("producer-metrics", "record-send-rate", Map.of());
         when(m.metricValue()).thenReturn(Double.NaN);
         registry.update(m);
@@ -85,7 +70,7 @@ class MetricRegistryTest {
 
     @Test
     void infinite_metric_value_is_excluded_from_snapshot() {
-        MetricRegistry registry = new MetricRegistry(List.of());
+        MetricRegistry registry = new MetricRegistry();
         KafkaMetric m = metric("producer-metrics", "record-send-rate", Map.of());
         when(m.metricValue()).thenReturn(Double.POSITIVE_INFINITY);
         registry.update(m);
@@ -94,7 +79,7 @@ class MetricRegistryTest {
 
     @Test
     void long_metric_value_is_included_in_snapshot() {
-        MetricRegistry registry = new MetricRegistry(List.of());
+        MetricRegistry registry = new MetricRegistry();
         KafkaMetric m = metric("producer-metrics", "record-send-total", Map.of());
         when(m.metricValue()).thenReturn(42L);
         registry.update(m);
@@ -103,7 +88,7 @@ class MetricRegistryTest {
 
     @Test
     void integer_metric_value_is_included_in_snapshot() {
-        MetricRegistry registry = new MetricRegistry(List.of());
+        MetricRegistry registry = new MetricRegistry();
         KafkaMetric m = metric("producer-metrics", "record-send-count", Map.of());
         when(m.metricValue()).thenReturn(7);
         registry.update(m);
@@ -112,7 +97,7 @@ class MetricRegistryTest {
 
     @Test
     void non_numeric_metric_value_is_excluded_from_snapshot() {
-        MetricRegistry registry = new MetricRegistry(List.of());
+        MetricRegistry registry = new MetricRegistry();
         KafkaMetric m = metric("producer-metrics", "record-send-rate", Map.of());
         when(m.metricValue()).thenReturn("not-a-number");
         registry.update(m);

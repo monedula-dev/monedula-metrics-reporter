@@ -28,6 +28,14 @@ public class MetricCollector {
 
     private final MetricRegistry registry;
     private volatile MetricDataMapper mapper;
+    /**
+     * Filter applied between snapshot and mapping, on the export thread. Defaults to
+     * {@link AllowList#ALLOW_ALL} and is hot-swapped by {@link #replaceAllowList} when the
+     * {@code allowed.metrics} config is (re)configured. Read once per tick into a local so a
+     * concurrent swap can't split a single tick across two filters.
+     */
+    private volatile AllowList allowList = AllowList.ALLOW_ALL;
+
     private final MetricExporter exporter;
     private final long intervalMs;
     private final long timeoutMs;
@@ -106,6 +114,15 @@ public class MetricCollector {
         this.yammerMapper = newYammerMapper;
     }
 
+    /**
+     * Hot-swap the export-time allow-list (used at configure and on KIP-226 reconfigure).
+     * The new instance carries its own empty memo cache; the old instance — and its cache —
+     * become unreachable. Takes effect on the next export tick.
+     */
+    public void replaceAllowList(AllowList newAllowList) {
+        this.allowList = newAllowList;
+    }
+
     public void start() {
         scheduler.scheduleAtFixedRate(this::exportTick, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
     }
@@ -160,12 +177,22 @@ public class MetricCollector {
         boolean success = false;
         try {
             long now = System.currentTimeMillis() * 1_000_000L;
+            // Read the volatile filter once so a concurrent replaceAllowList() can't split a
+            // single tick's SPI and Yammer snapshots across two different allow-lists.
+            AllowList filter = this.allowList;
             List<MetricData> data = new ArrayList<>();
-            data.addAll(mapper.mapAll(registry.snapshot()));
+            List<MetricRegistry.Sample> spi = registry.snapshot().stream()
+                    .filter(s -> filter.matches(spiSubject(s.metric())))
+                    .toList();
+            data.addAll(mapper.mapAll(spi));
             YammerMetricRegistry yr = this.yammerRegistry;
             YammerMetricDataMapper ym = this.yammerMapper;
             if (yr != null && ym != null) {
-                data.addAll(ym.mapAll(yr.snapshot()));
+                List<java.util.Map.Entry<com.yammer.metrics.core.MetricName, com.yammer.metrics.core.Metric>> yammer =
+                        yr.snapshot().stream()
+                                .filter(e -> filter.matches(yammerSubject(e.getKey())))
+                                .toList();
+                data.addAll(ym.mapAll(yammer));
             }
             // Self-monitoring metrics. Emitted every tick so an operator can alert on
             // failure-rate or stalled export-duration even when the Kafka registry is
@@ -245,6 +272,17 @@ public class MetricCollector {
             }
             lastExportDurationMs = (System.nanoTime() - tickStartNanos) / 1_000_000L;
         }
+    }
+
+    /** SPI filter subject — {@code {group}.{name}}, matching README's allowed.metrics semantics. */
+    private static String spiSubject(org.apache.kafka.common.metrics.KafkaMetric metric) {
+        org.apache.kafka.common.MetricName mn = metric.metricName();
+        return mn.group() + "." + mn.name();
+    }
+
+    /** Yammer filter subject — {@code {group}.{type}.{name}}, matching README's allowed.metrics semantics. */
+    private static String yammerSubject(com.yammer.metrics.core.MetricName name) {
+        return name.getGroup() + "." + name.getType() + "." + name.getName();
     }
 
     private MetricData selfSum(long now, String name, String description, long count) {

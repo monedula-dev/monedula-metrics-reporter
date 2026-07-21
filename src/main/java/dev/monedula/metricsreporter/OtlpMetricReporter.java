@@ -127,13 +127,16 @@ public class OtlpMetricReporter implements MetricsReporter, ClientTelemetry {
         teardown();
         try {
             cfg = new OtlpMetricReporterConfig(configs);
-            registry = new MetricRegistry(cfg.allowedMetrics());
+            registry = new MetricRegistry();
 
             Map<String, String> resourceAttrs = combinedResourceAttributes();
             MetricDataMapper mapper = new MetricDataMapper(namespace, resourceAttrs, startEpochNanos);
 
             collector = new MetricCollector(
                     registry, mapper, OtlpExporterFactory.create(cfg), cfg.intervalMs(), cfg.timeoutMs());
+            // Filtering happens at export time (see MetricCollector): registries store every metric
+            // so a later live widening of the allow-list can resurrect metrics Kafka announces once.
+            collector.replaceAllowList(new AllowList(cfg.allowedMetrics()));
 
             attachYammerIfBroker(cfg, resourceAttrs);
 
@@ -377,7 +380,7 @@ public class OtlpMetricReporter implements MetricsReporter, ClientTelemetry {
             return;
         }
 
-        YammerMetricRegistry yr = new YammerMetricRegistry(cfg.allowedMetrics());
+        YammerMetricRegistry yr = new YammerMetricRegistry();
         yr.attach(yammer);
         // Also attach to the default Yammer registry — some Kafka internals still register there.
         try {

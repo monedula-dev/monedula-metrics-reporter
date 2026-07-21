@@ -51,4 +51,21 @@ class AllowListTest {
         // First pattern still works independently.
         assertTrue(allowList.matches("anything.first"));
     }
+
+    @Test
+    void repeated_matches_are_stable_for_hits_and_misses() {
+        // Exercises the memo cache: the second and third calls hit the cached result and must
+        // return exactly what the first (uncached) call did, for both a match and a non-match.
+        AllowList allowList = new AllowList(patterns("producer.*"));
+        for (int i = 0; i < 3; i++) {
+            assertTrue(allowList.matches("producer-metrics.record-send-rate"), "hit unstable on call " + i);
+            assertFalse(allowList.matches("consumer-metrics.records-consumed-rate"), "miss unstable on call " + i);
+        }
+    }
+
+    @Test
+    void allow_all_constant_admits_everything() {
+        assertTrue(AllowList.ALLOW_ALL.matches("anything.at.all"));
+        assertTrue(AllowList.ALLOW_ALL.matches("kafka.server.ReplicaManager.UnderReplicatedPartitions"));
+    }
 }
