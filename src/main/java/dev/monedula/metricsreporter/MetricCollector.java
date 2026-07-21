@@ -186,9 +186,9 @@ public class MetricCollector {
             // single tick's SPI and Yammer snapshots across two different allow-lists.
             AllowList filter = this.allowList;
             List<MetricData> data = new ArrayList<>();
-            List<MetricRegistry.Sample> spi = registry.snapshot().stream()
-                    .filter(s -> filter.matches(spiSubject(s.metric())))
-                    .toList();
+            // Filter INSIDE snapshot (by metric name, before the synchronized metricValue() read)
+            // so a restrictive allow-list doesn't pay a value read for every metric it discards.
+            List<MetricRegistry.Sample> spi = registry.snapshot(m -> filter.matches(spiSubject(m)));
             data.addAll(mapper.mapAll(spi));
             YammerMetricRegistry yr = this.yammerRegistry;
             YammerMetricDataMapper ym = this.yammerMapper;

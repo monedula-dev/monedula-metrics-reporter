@@ -103,4 +103,26 @@ class MetricRegistryTest {
         registry.update(m);
         assertEquals(0, registry.snapshot().size());
     }
+
+    @Test
+    void predicate_filters_and_does_not_read_value_of_rejected_metrics() {
+        // The predicate must be applied BEFORE metricValue() so a metric the export-time
+        // allow-list discards never pays its synchronized value read. A metric whose
+        // metricValue() throws proves the read is skipped: rejecting it must not blow up,
+        // and accepting it must (the value is then read).
+        MetricRegistry registry = new MetricRegistry();
+        KafkaMetric kept = metric("producer-metrics", "record-send-rate", Map.of());
+        KafkaMetric rejected = Mockito.mock(KafkaMetric.class);
+        when(rejected.metricName()).thenReturn(new MetricName("obscure", "kafka.server", "", Map.of()));
+        when(rejected.metricValue())
+                .thenThrow(new AssertionError("metricValue() must not be read for a rejected metric"));
+        registry.update(kept);
+        registry.update(rejected);
+
+        var snap = registry.snapshot(m -> m.metricName().group().equals("producer-metrics"));
+        assertEquals(1, snap.size());
+        assertEquals("record-send-rate", snap.get(0).metric().metricName().name());
+
+        assertThrows(AssertionError.class, () -> registry.snapshot(m -> true));
+    }
 }

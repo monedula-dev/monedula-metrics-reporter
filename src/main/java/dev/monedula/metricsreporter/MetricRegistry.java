@@ -5,6 +5,7 @@ package dev.monedula.metricsreporter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.metrics.KafkaMetric;
 
@@ -37,9 +38,23 @@ public class MetricRegistry {
      */
     public record Sample(KafkaMetric metric, double value) {}
 
+    /** Snapshot every stored metric. Equivalent to {@link #snapshot(Predicate)} with an accept-all predicate. */
     public List<Sample> snapshot() {
+        return snapshot(m -> true);
+    }
+
+    /**
+     * Snapshot the metrics the {@code accept} predicate admits, reading each admitted metric's
+     * value exactly once. The predicate is tested BEFORE {@link KafkaMetric#metricValue()} is
+     * called, so a metric the export-time allow-list will discard never pays its
+     * {@code synchronized} value read — the registry stores every metric, but a restrictive
+     * allow-list still keeps per-tick reads (and contention with Kafka's metric-recording
+     * threads) proportional to the allowed subset, not the full registry.
+     */
+    public List<Sample> snapshot(Predicate<KafkaMetric> accept) {
         List<Sample> result = new ArrayList<>();
         for (KafkaMetric m : metrics.values()) {
+            if (!accept.test(m)) continue;
             Object raw = m.metricValue();
             // Kafka Measurable impls return double, but Gauge<T> can return Long/Integer/
             // Float/etc. — accept any Number so those aren't silently dropped.
