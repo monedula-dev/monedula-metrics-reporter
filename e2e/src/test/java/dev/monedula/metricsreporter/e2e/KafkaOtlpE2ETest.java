@@ -102,6 +102,18 @@ class KafkaOtlpE2ETest {
      * interval because OtlpMetricReporterConfig requires timeout.ms < interval.ms strictly.
      */
     private static E2eStack startStack(Network network, String logSuffix) {
+        return startStack(network, logSuffix, Map.of());
+    }
+
+    /**
+     * Overload that layers {@code extraKafkaEnv} on top of the standard Kafka container environment.
+     * The extras are applied with {@code withEnv} AFTER the standard entries, so a duplicate key in
+     * {@code extraKafkaEnv} wins (Testcontainers/last-write-wins). Values pass through to Docker
+     * literally — there is no shell, so a backslash in a regex (e.g. {@code producer-metrics\..*})
+     * reaches the broker config unescaped. Used by the dynamic-reconfiguration test to start the
+     * broker with a restrictive {@code KAFKA_OTLP_METRIC_REPORTER_ALLOWED_METRICS}.
+     */
+    private static E2eStack startStack(Network network, String logSuffix, Map<String, String> extraKafkaEnv) {
         GenericContainer<?> collector = null;
         GenericContainer<?> prometheus = null;
         GenericContainer<?> kafka = null;
@@ -158,6 +170,10 @@ class KafkaOtlpE2ETest {
                             "/opt/kafka/libs/monedula-metrics-reporter.jar")
                     .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("kafka" + logSuffix)))
                     .waitingFor(Wait.forLogMessage(".*Kafka Server started.*", 1));
+            // Per-test env overrides, applied last so they win over the standard entries above.
+            for (Map.Entry<String, String> e : extraKafkaEnv.entrySet()) {
+                kafka.withEnv(e.getKey(), e.getValue());
+            }
             kafka.setPortBindings(List.of(KAFKA_HOST_PORT + ":19092"));
             kafka.start();
 
@@ -468,6 +484,137 @@ class KafkaOtlpE2ETest {
     }
 
     /**
+     * End-to-end proof that {@code otlp.metric.reporter.allowed.metrics} can be widened LIVE via
+     * Kafka's KIP-226 dynamic broker configuration — no broker restart — and that a metric which
+     * was stored-but-filtered resurfaces in Prometheus on the next export tick.
+     *
+     * <p>Why this is the true proof of the feature: filtering moved from ingest to export time
+     * (commit "Move allow-list filtering from ingest to export time"), so the broker's registries
+     * always hold every metric Kafka announces once at {@code init()}; only the export-time
+     * {@link dev.monedula.metricsreporter.AllowList} decides what ships. Widening that allow-list at
+     * runtime therefore RESURRECTS a previously-excluded metric that ingest-time filtering could
+     * never have recovered (Kafka never re-announces most SPI/Yammer metrics).
+     *
+     * <p>Pipeline under test:
+     *   broker OtlpMetricReporter (implements Reconfigurable)
+     *     -> MetricCollector applies the volatile AllowList between snapshot and mapping
+     *     -> OpenTelemetry Collector (OTLP gRPC, prometheus pull exporter on :8889)
+     *     <- Prometheus (scrapes the collector)
+     *   AdminClient.incrementalAlterConfigs(BROKER "1", allowed.metrics="") -> Kafka -> reconfigure()
+     *
+     * <p>Scenario:
+     * <ol>
+     *   <li>Start the broker with {@code KAFKA_OTLP_METRIC_REPORTER_ALLOWED_METRICS=producer-metrics\..*}.
+     *       That single pattern admits SPI subjects like {@code producer-metrics.record-send-rate}
+     *       ({@code {group}.{name}}) but NOT the Yammer controller subject
+     *       {@code kafka.controller.KafkaController.ActiveControllerCount} ({@code {group}.{type}.{name}}),
+     *       so {@code kafka_controller_kafkacontroller_activecontrollercount} must be ABSENT.</li>
+     *   <li>Liveness gate: await {@code monedula_reporter_export_success_total}. MetricCollector emits
+     *       the self-monitoring metrics AFTER the allow-list filter (see exportTick), so their arrival
+     *       proves the whole export pipeline is up regardless of the allow-list.</li>
+     *   <li>Negative check: with the pipeline demonstrably exporting (and one extra interval elapsed),
+     *       assert the Yammer controller metric is absent — if it were going to ship under this
+     *       allow-list it already would have.</li>
+     *   <li>Widen live: {@code incrementalAlterConfigs} sets {@code allowed.metrics} to "" (empty =
+     *       allow-all, the documented semantics) on the BROKER resource. No restart.</li>
+     *   <li>Await the previously-absent {@code kafka_controller_kafkacontroller_activecontrollercount}
+     *       — the resurrect proof.</li>
+     * </ol>
+     *
+     * <p>This also guards the design assumption that Kafka delivers the COMPLETE merged config map to
+     * {@code reconfigure()}/{@code validateReconfiguration()}: those construct a fresh
+     * {@code OtlpMetricReporterConfig(configs)}, which requires all keys (including static ones with
+     * defaults). If Kafka passed only the changed key, that construction would throw and the
+     * {@code --alter} would be REJECTED — so a passing widen is itself the proof of the full-map
+     * contract.
+     */
+    @Test
+    void allow_list_widens_live_via_dynamic_broker_config() throws Exception {
+        try (Network network = Network.newNetwork()) {
+            // Restrictive allow-list: admits some SPI producer metrics, excludes the Yammer controller
+            // metric. Single pattern (NO commas — commas split patterns). The backslash reaches the
+            // broker config literally through withEnv (no shell), giving regex "producer-metrics\..*".
+            E2eStack stack = startStack(
+                    network,
+                    "-reconfig",
+                    Map.of("KAFKA_OTLP_METRIC_REPORTER_ALLOWED_METRICS", "producer-metrics\\..*"));
+            try {
+                String prometheusUrl = stack.prometheusUrl();
+
+                // --- Positive control (liveness gate) ---
+                // Self-monitoring metrics are added AFTER the allow-list filter in exportTick, so they
+                // ship no matter how restrictive the allow-list is. Their arrival proves the broker's
+                // reporter -> collector -> Prometheus path is fully up before we assert an absence.
+                assertTrue(
+                        awaitAnyMetric(
+                                prometheusUrl,
+                                new String[] {
+                                    "monedula_reporter_export_success_total", "monedula_reporter_export_success"
+                                },
+                                Duration.ofSeconds(60)),
+                        "Expected monedula_reporter_export_success_total (self-monitoring, bypasses the "
+                                + "allow-list) in Prometheus — the export pipeline must be up before the absence check");
+
+                // Give one extra full export interval (broker interval.ms=5000) so that, if the Yammer
+                // controller metric were admissible under the current allow-list, it would already have
+                // been exported and scraped. It is NOT admissible, so this makes the absence reliable.
+                Thread.sleep(8_000);
+
+                // --- Negative check: the excluded Yammer metric must be ABSENT under the narrow list ---
+                // Yammer subject is {group}.{type}.{name} = kafka.controller.KafkaController.ActiveControllerCount,
+                // which "producer-metrics\..*" (anchored whole-subject match) cannot match, so the export
+                // filter drops it even though the registry holds it.
+                assertTrue(
+                        metricAbsentFromPrometheus(
+                                prometheusUrl, "kafka_controller_kafkacontroller_activecontrollercount"),
+                        "Expected kafka_controller_kafkacontroller_activecontrollercount to be ABSENT under the "
+                                + "restrictive allow-list (producer-metrics\\..* excludes the Yammer controller subject)");
+
+                // --- Widen the allow-list LIVE via dynamic broker config (KIP-226), no restart ---
+                // Empty string = allow-all (OtlpMetricReporterConfig.compilePatterns treats blank as an
+                // empty pattern list). Applied to the per-broker resource (node id "1").
+                Properties adminProps = new Properties();
+                adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + KAFKA_HOST_PORT);
+                ConfigResource broker = new ConfigResource(ConfigResource.Type.BROKER, "1");
+                try (Admin admin = Admin.create(adminProps)) {
+                    Collection<AlterConfigOp> ops = List.of(new AlterConfigOp(
+                            new ConfigEntry("otlp.metric.reporter.allowed.metrics", ""), AlterConfigOp.OpType.SET));
+                    admin.incrementalAlterConfigs(Map.of(broker, ops))
+                            .all()
+                            .get(30, java.util.concurrent.TimeUnit.SECONDS);
+
+                    // Confirm the dynamic value took effect. describeConfigs on a BROKER resource returns
+                    // MANY entries; pick ours out by name and assert it is now the empty allow-all value.
+                    Config applied = admin.describeConfigs(List.of(broker))
+                            .all()
+                            .get(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .get(broker);
+                    ConfigEntry allowedEntry = applied.get("otlp.metric.reporter.allowed.metrics");
+                    assertTrue(
+                            allowedEntry != null && "".equals(allowedEntry.value()),
+                            "Expected dynamic 'otlp.metric.reporter.allowed.metrics' = '' (allow-all) after alter, got: "
+                                    + allowedEntry);
+                }
+
+                // --- Resurrect proof: the previously-absent Yammer metric now appears ---
+                // No broker restart occurred; reconfigure() hot-swapped the AllowList and the next export
+                // tick shipped the controller metric the registry was holding all along. A passing await
+                // here also proves Kafka delivered the FULL merged config map to reconfigure (a partial
+                // map would have failed OtlpMetricReporterConfig construction and rejected the alter).
+                assertTrue(
+                        awaitAnyMetric(
+                                prometheusUrl,
+                                new String[] {"kafka_controller_kafkacontroller_activecontrollercount"},
+                                Duration.ofSeconds(60)),
+                        "Expected kafka_controller_kafkacontroller_activecontrollercount to APPEAR after widening "
+                                + "the allow-list live via dynamic broker config — the resurrect proof (no restart)");
+            } finally {
+                stack.stopAll();
+            }
+        }
+    }
+
+    /**
      * Poll Prometheus until any of {@code metricNames} returns a non-empty instant-query
      * result, or {@code timeout} elapses. Returns true on first hit, false if the deadline
      * passes. Wait between polls is short (1s) so a positive answer surfaces quickly.
@@ -493,6 +640,17 @@ class KafkaOtlpE2ETest {
             Thread.sleep(1_000);
         }
         return false;
+    }
+
+    /**
+     * Single point-in-time check that {@code metricName} returns an EMPTY instant-query result.
+     * Used for the absence assertion, which is only meaningful once the pipeline is proven live and
+     * an extra export interval has elapsed (see the caller) — otherwise "absent" could just mean
+     * "not exported yet".
+     */
+    private boolean metricAbsentFromPrometheus(String baseUrl, String metricName)
+            throws IOException, InterruptedException {
+        return !metricExistsInPrometheus(baseUrl, metricName);
     }
 
     private boolean metricExistsInPrometheus(String baseUrl, String metricName)
