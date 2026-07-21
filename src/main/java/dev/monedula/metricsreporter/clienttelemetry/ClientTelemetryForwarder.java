@@ -39,7 +39,7 @@ public final class ClientTelemetryForwarder {
     private static final Item POISON = new Item(new byte[0], null);
 
     private final MetricExporter exporter;
-    private final ClientMetricsConverter converter;
+    private volatile ClientMetricsConverter converter;
     private final BlockingQueue<Item> queue;
     private final long timeoutMs;
 
@@ -68,6 +68,19 @@ public final class ClientTelemetryForwarder {
     /** Current broker-identity labels applied to forwarded client metrics. Visible for tests/observability. */
     public Map<String, String> currentBrokerIdentity() {
         return brokerIdentity;
+    }
+
+    /**
+     * Hot-swap the payload converter (used on KIP-714 reconfigure when enrichment toggles
+     * change). Takes effect for the next payload drained; in-flight items are unaffected.
+     */
+    public void replaceConverter(ClientMetricsConverter newConverter) {
+        this.converter = newConverter;
+    }
+
+    /** Currently-installed payload converter. Visible for tests/observability. */
+    public ClientMetricsConverter currentConverter() {
+        return converter;
     }
 
     public void start() {

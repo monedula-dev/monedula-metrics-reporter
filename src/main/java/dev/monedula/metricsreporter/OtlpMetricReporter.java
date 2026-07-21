@@ -13,7 +13,9 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsContext;
 import org.apache.kafka.common.metrics.MetricsReporter;
@@ -49,7 +51,12 @@ public class OtlpMetricReporter implements MetricsReporter, ClientTelemetry {
     private static final Logger log = LoggerFactory.getLogger(OtlpMetricReporter.class);
 
     private volatile MetricRegistry registry;
-    private volatile MetricCollector collector;
+    /**
+     * The export pipeline. Package-private (like {@code yammerRegistry}, {@code jvmMetrics},
+     * and {@code clientTelemetryForwarder}) so tests can observe the export-time allow-list a
+     * KIP-226 reconfigure swaps in. {@code null} before {@link #configure} or in no-op mode.
+     */
+    volatile MetricCollector collector;
     /**
      * Yammer side of the reporter. Stays {@code null} on client-only classpaths (no
      * {@code KafkaYammerMetrics}) — kept package-private so tests can assert on
@@ -247,6 +254,59 @@ public class OtlpMetricReporter implements MetricsReporter, ClientTelemetry {
     @Override
     public void close() {
         teardown();
+    }
+
+    /**
+     * The subset of config keys Kafka may change live via dynamic broker configuration
+     * (KIP-226 — {@code kafka-configs.sh --entity-type brokers --alter}). Returning a
+     * non-empty set here is what makes Kafka route {@link #validateReconfiguration} and
+     * {@link #reconfigure} to this reporter at all; connection settings stay static by
+     * design and are absent from the set (see {@link OtlpMetricReporterConfig#RECONFIGURABLE_CONFIGS}).
+     */
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        return OtlpMetricReporterConfig.RECONFIGURABLE_CONFIGS;
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
+        // Kafka passes the complete merged configuration; constructing the config object runs the
+        // full validation (regexes, booleans, cross-field rules). Throwing here makes the broker
+        // REJECT the kafka-configs.sh --alter — the running pipeline is never touched by bad input.
+        new OtlpMetricReporterConfig(configs);
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        if (noop || collector == null) {
+            log.warn("OtlpMetricReporter is in no-op mode — dynamic reconfiguration ignored; restart required");
+            return;
+        }
+        try {
+            OtlpMetricReporterConfig newCfg = new OtlpMetricReporterConfig(configs);
+            this.cfg = newCfg;
+            collector.replaceAllowList(new AllowList(newCfg.allowedMetrics()));
+            ClientTelemetryForwarder f = this.clientTelemetryForwarder;
+            if (f != null) {
+                ClientMetricsEnricher enricher = new ClientMetricsEnricher(
+                        newCfg.clientTelemetryEnrichBroker(),
+                        newCfg.clientTelemetryEnrichClientIdentity(),
+                        newCfg.clientTelemetryEnrichClientId(),
+                        newCfg.clientTelemetryEnrichClientInstanceId());
+                f.replaceConverter(new ClientMetricsConverter(enricher));
+            }
+            log.info(
+                    "OtlpMetricReporter reconfigured — allowed.metrics patterns={} enrich[broker={} clientIdentity={} clientId={} clientInstanceId={}]",
+                    newCfg.allowedMetrics().size(),
+                    newCfg.clientTelemetryEnrichBroker(),
+                    newCfg.clientTelemetryEnrichClientIdentity(),
+                    newCfg.clientTelemetryEnrichClientId(),
+                    newCfg.clientTelemetryEnrichClientInstanceId());
+        } catch (Exception e) {
+            // Fail-open: reconfigure must never throw into the broker. validateReconfiguration
+            // already gated bad input, so this is unexpected — keep the previous settings.
+            log.warn("OtlpMetricReporter reconfigure failed — keeping previous settings", e);
+        }
     }
 
     @Override

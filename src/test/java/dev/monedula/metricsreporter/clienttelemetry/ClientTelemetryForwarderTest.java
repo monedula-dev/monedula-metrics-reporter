@@ -2,8 +2,10 @@
 // Copyright (C) 2025 Monedula contributors
 package dev.monedula.metricsreporter.clienttelemetry;
 
+import static io.opentelemetry.api.common.AttributeKey.stringKey;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.opentelemetry.proto.common.v1.InstrumentationScope;
@@ -21,6 +23,7 @@ import io.opentelemetry.sdk.metrics.export.MetricExporter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -103,6 +106,34 @@ class ClientTelemetryForwarderTest {
             assertEquals("client.count", exporter.exported.get(0).getName());
             assertEquals(1, fwd.receivedCount());
             assertEquals(0, fwd.droppedCount());
+        } finally {
+            fwd.stop();
+        }
+    }
+
+    @Test
+    void replace_converter_takes_effect_for_the_next_payload() throws Exception {
+        var exporter = new CapturingExporter();
+        // newForwarder's enricher has enrichBroker=false, so broker identity is not attached.
+        var fwd = newForwarder(exporter, 16);
+        fwd.start();
+        try {
+            fwd.submit(oneGauge(), null);
+            awaitEquals(1, fwd::forwardedCount);
+            assertNull(
+                    exporter.exported.get(0).getResource().getAttributes().get(stringKey("kafka.cluster.id")),
+                    "with enrichBroker=false the exported Resource must not carry broker identity");
+
+            // Swap in a converter that enriches with broker identity, and supply that identity.
+            fwd.setBrokerIdentity(Map.of("kafka.cluster.id", "C1"));
+            fwd.replaceConverter(new ClientMetricsConverter(new ClientMetricsEnricher(true, false, false, false)));
+
+            fwd.submit(oneGauge(), null);
+            awaitEquals(2, fwd::forwardedCount);
+            assertEquals(
+                    "C1",
+                    exporter.exported.get(1).getResource().getAttributes().get(stringKey("kafka.cluster.id")),
+                    "after replaceConverter with enrichBroker=true the exported Resource must carry broker identity");
         } finally {
             fwd.stop();
         }

@@ -157,6 +157,11 @@ public class MetricCollector {
         return mapper;
     }
 
+    /** Currently-installed export-time allow-list. Visible for tests verifying the reconfigure swap. */
+    AllowList allowList() {
+        return allowList;
+    }
+
     /** Run a single export synchronously. Visible for tests. */
     void exportOnceForTest() {
         exportTick();
