@@ -583,16 +583,22 @@ class KafkaOtlpE2ETest {
                             .all()
                             .get(30, java.util.concurrent.TimeUnit.SECONDS);
 
-                    // Confirm the dynamic value took effect. describeConfigs on a BROKER resource returns
-                    // MANY entries; pick ours out by name and assert it is now the empty allow-all value.
+                    // Confirm the alter was applied and persisted as a dynamic broker config. We assert
+                    // PRESENCE + source, not the value: the broker's own ConfigDef does not know the
+                    // reporter's custom keys, so describeConfigs classifies them as sensitive and REDACTS
+                    // the value (isSensitive=true, value="Redacted"). The redaction is only in the admin
+                    // read-back — the broker still delivers the real value to the plugin's reconfigure().
+                    // (This is why the resurrect assertion below is the actual proof the value took effect.)
                     Config applied = admin.describeConfigs(List.of(broker))
                             .all()
                             .get(30, java.util.concurrent.TimeUnit.SECONDS)
                             .get(broker);
                     ConfigEntry allowedEntry = applied.get("otlp.metric.reporter.allowed.metrics");
                     assertTrue(
-                            allowedEntry != null && "".equals(allowedEntry.value()),
-                            "Expected dynamic 'otlp.metric.reporter.allowed.metrics' = '' (allow-all) after alter, got: "
+                            allowedEntry != null
+                                    && allowedEntry.source() == ConfigEntry.ConfigSource.DYNAMIC_BROKER_CONFIG,
+                            "Expected 'otlp.metric.reporter.allowed.metrics' to be set as a DYNAMIC_BROKER_CONFIG "
+                                    + "after the alter (value is redacted by the broker for unknown keys), got: "
                                     + allowedEntry);
                 }
 
