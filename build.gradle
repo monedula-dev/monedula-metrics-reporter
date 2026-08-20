@@ -9,7 +9,7 @@ plugins {
     // CycloneDX SBOM generator. The cyclonedxBom task writes build/reports/bom.json
     // describing every runtime dependency the shadow JAR bundles; release.yml
     // attaches it to the GitHub Release so consumers can verify the supply chain.
-    id 'org.cyclonedx.bom' version '3.3.0'
+    id 'org.cyclonedx.bom' version '3.4.1'
     // Format / lint enforcement. spotlessCheck runs in CI; spotlessApply formats
     // locally. The 'apply false' here lets the allprojects block below pick up
     // each module's Java source set (root, :e2e, :benchmarks).
