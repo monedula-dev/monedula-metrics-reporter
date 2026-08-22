@@ -46,13 +46,13 @@ For the longer product and engineering rationale, see:
 CI builds the shadow JAR and runs the full unit + integration suite against the
 full Cartesian product of the JDK and Kafka versions below:
 
-| | Kafka 3.7.0 | Kafka 3.9.0 | Kafka 4.2.0 | Kafka 4.3.0 |
+| | Kafka 3.7.2 | Kafka 3.9.2 | Kafka 4.2.1 | Kafka 4.3.1 |
 |---|:---:|:---:|:---:|:---:|
 | **JDK 17** | ✓ | ✓ | ✓ | ✓ |
 | **JDK 21** | ✓ | ✓ | ✓ | ✓ |
 
 The end-to-end test (Kafka + OTel collector + Prometheus via Testcontainers)
-runs once per CI build against the default Kafka version (`4.2.0`) — the
+runs once per CI build against the default Kafka version (`4.2.1`) — the
 contact surface with Kafka is already covered by the matrix above, so
 multiplying e2e by every cell would add runtime without adding coverage.
 
