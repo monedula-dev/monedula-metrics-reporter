@@ -6,6 +6,7 @@ import static java.util.Map.entry;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Map;
+import java.util.Set;
 import org.apache.kafka.common.config.ConfigException;
 import org.junit.jupiter.api.Test;
 
@@ -335,6 +336,18 @@ class OtlpMetricReporterConfigTest {
     void client_telemetry_enrich_client_instance_id_defaults_to_false() {
         var cfg = new OtlpMetricReporterConfig(Map.of());
         assertFalse(cfg.clientTelemetryEnrichClientInstanceId());
+    }
+
+    @Test
+    void reconfigurable_configs_contains_exactly_the_five_dynamic_keys() {
+        assertEquals(
+                Set.of(
+                        OtlpMetricReporterConfig.ALLOWED_METRICS,
+                        OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_BROKER,
+                        OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_IDENTITY,
+                        OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_ID,
+                        OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_INSTANCE_ID),
+                OtlpMetricReporterConfig.RECONFIGURABLE_CONFIGS);
     }
 
     @Test

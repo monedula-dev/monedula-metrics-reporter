@@ -6,35 +6,28 @@ import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.core.MetricsRegistryListener;
-import dev.monedula.metricsreporter.AllowList;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
 
 /**
- * Listens on a Yammer MetricsRegistry; stores allow-listed metrics for periodic export.
+ * Listens on a Yammer MetricsRegistry; stores every registered metric for periodic export.
  * Implements MetricsRegistryListener so we receive add/remove events as Kafka registers
- * its broker-internal metrics.
+ * its broker-internal metrics. Filtering (the allow-list) is applied later at export time
+ * by {@code MetricCollector}, so the add/remove callbacks here do pure map put/remove.
  */
 public class YammerMetricRegistry implements MetricsRegistryListener {
 
-    private final AllowList allowList;
     private final ConcurrentHashMap<MetricName, Metric> metrics = new ConcurrentHashMap<>();
     private final Set<MetricsRegistry> attached =
             java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
 
-    public YammerMetricRegistry(List<Pattern> allowedPatterns) {
-        this.allowList = new AllowList(allowedPatterns);
-    }
-
     /** Attach to a registry: capture currently-registered metrics + receive future events. */
     public void attach(MetricsRegistry registry) {
         for (Map.Entry<MetricName, Metric> e : registry.allMetrics().entrySet()) {
-            if (isAllowed(e.getKey())) metrics.put(e.getKey(), e.getValue());
+            metrics.put(e.getKey(), e.getValue());
         }
         registry.addListener(this);
         attached.add(registry);
@@ -60,7 +53,7 @@ public class YammerMetricRegistry implements MetricsRegistryListener {
 
     @Override
     public void onMetricAdded(MetricName name, Metric metric) {
-        if (isAllowed(name)) metrics.put(name, metric);
+        metrics.put(name, metric);
     }
 
     @Override
@@ -71,9 +64,5 @@ public class YammerMetricRegistry implements MetricsRegistryListener {
     /** Snapshot of currently tracked (name, metric) pairs. */
     public Collection<Map.Entry<MetricName, Metric>> snapshot() {
         return new ArrayList<>(metrics.entrySet());
-    }
-
-    private boolean isAllowed(MetricName metric) {
-        return allowList.matches(metric.getGroup() + "." + metric.getType() + "." + metric.getName());
     }
 }

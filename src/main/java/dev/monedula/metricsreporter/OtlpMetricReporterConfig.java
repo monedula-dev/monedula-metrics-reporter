@@ -59,6 +59,18 @@ public class OtlpMetricReporterConfig {
     /** Bounded in-memory queue size for inbound client pushes; overflow drops. Default: {@code 1024}. */
     public static final String CLIENT_TELEMETRY_QUEUE_CAPACITY = "otlp.metric.reporter.client.telemetry.queue.capacity";
 
+    /**
+     * The config keys that may be changed at runtime via Kafka dynamic broker configuration
+     * (KIP-226). Everything else — connection settings in particular — is static by design
+     * and requires a broker restart (see docs/assumptions.md).
+     */
+    public static final Set<String> RECONFIGURABLE_CONFIGS = Set.of(
+            ALLOWED_METRICS,
+            CLIENT_TELEMETRY_ENRICH_BROKER,
+            CLIENT_TELEMETRY_ENRICH_CLIENT_IDENTITY,
+            CLIENT_TELEMETRY_ENRICH_CLIENT_ID,
+            CLIENT_TELEMETRY_ENRICH_CLIENT_INSTANCE_ID);
+
     public static final String TRANSPORT_GRPC = "grpc";
     public static final String TRANSPORT_HTTP = "http";
 

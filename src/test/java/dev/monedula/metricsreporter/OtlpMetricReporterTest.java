@@ -5,11 +5,14 @@ package dev.monedula.metricsreporter;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
+import dev.monedula.metricsreporter.clienttelemetry.ClientMetricsConverter;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.resources.Resource;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.kafka.common.MetricName;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.KafkaMetricsContext;
 import org.junit.jupiter.api.Test;
@@ -343,6 +346,122 @@ class OtlpMetricReporterTest {
             assertEquals(
                     "3",
                     reporter.clientTelemetryForwarder.currentBrokerIdentity().get("kafka.node.id"));
+        } finally {
+            reporter.close();
+        }
+    }
+
+    /** A complete merged config (Kafka passes the full map on reconfigure) built from defaults + overrides. */
+    private static Map<String, String> mergedConfig(Map<String, String> overrides) {
+        Map<String, String> merged = new HashMap<>(OtlpMetricReporterConfig.defaults());
+        merged.put(OtlpMetricReporterConfig.ENDPOINT, "http://127.0.0.1:19999");
+        merged.put(OtlpMetricReporterConfig.INTERVAL_MS, "60000");
+        merged.put(OtlpMetricReporterConfig.TIMEOUT_MS, "1000");
+        merged.putAll(overrides);
+        return merged;
+    }
+
+    @Test
+    void reconfigurable_configs_exposes_the_dynamic_keys() {
+        OtlpMetricReporter reporter = new OtlpMetricReporter();
+        assertEquals(OtlpMetricReporterConfig.RECONFIGURABLE_CONFIGS, reporter.reconfigurableConfigs());
+    }
+
+    @Test
+    void validate_reconfiguration_rejects_invalid_input() {
+        OtlpMetricReporter reporter = new OtlpMetricReporter();
+        reporter.configure(mergedConfig(Map.of()));
+        try {
+            var receiverBefore = reporter.clientReceiver();
+            assertNotNull(receiverBefore, "client telemetry receiver should be live before reconfigure");
+
+            // Bad regex in allowed.metrics → rejected.
+            assertThrows(
+                    ConfigException.class,
+                    () -> reporter.validateReconfiguration(
+                            mergedConfig(Map.of(OtlpMetricReporterConfig.ALLOWED_METRICS, "producer.[invalid"))));
+            // Bad boolean in an enrich key → rejected.
+            assertThrows(
+                    ConfigException.class,
+                    () -> reporter.validateReconfiguration(
+                            mergedConfig(Map.of(OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_BROKER, "notabool"))));
+
+            // A rejected validation must not touch the running pipeline.
+            assertSame(receiverBefore, reporter.clientReceiver(), "validation failure must leave the reporter intact");
+        } finally {
+            reporter.close();
+        }
+    }
+
+    @Test
+    void reconfigure_swaps_the_allow_list_live() {
+        OtlpMetricReporter reporter = new OtlpMetricReporter();
+        reporter.configure(mergedConfig(Map.of(OtlpMetricReporterConfig.JVM_METRICS_ENABLED, "false")));
+        try {
+            AllowList before = reporter.collector.allowList();
+            // Startup had no allowed.metrics → allow all.
+            assertTrue(before.matches("consumer-metrics.records-consumed-rate"));
+
+            reporter.reconfigure(
+                    mergedConfig(Map.of(OtlpMetricReporterConfig.ALLOWED_METRICS, "producer-metrics\\..*")));
+
+            AllowList after = reporter.collector.allowList();
+            assertNotSame(before, after, "reconfigure should install a new AllowList");
+            assertTrue(after.matches("producer-metrics.record-send-rate"));
+            assertFalse(after.matches("consumer-metrics.records-consumed-rate"));
+        } finally {
+            reporter.close();
+        }
+    }
+
+    @Test
+    void reconfigure_swaps_client_telemetry_enrichment() {
+        OtlpMetricReporter reporter = new OtlpMetricReporter();
+        reporter.configure(mergedConfig(Map.of(OtlpMetricReporterConfig.JVM_METRICS_ENABLED, "false")));
+        try {
+            assertNotNull(reporter.clientTelemetryForwarder, "client telemetry forwarder should be live");
+            ClientMetricsConverter before = reporter.clientTelemetryForwarder.currentConverter();
+
+            reporter.reconfigure(
+                    mergedConfig(Map.of(OtlpMetricReporterConfig.CLIENT_TELEMETRY_ENRICH_CLIENT_ID, "false")));
+
+            ClientMetricsConverter after = reporter.clientTelemetryForwarder.currentConverter();
+            assertNotSame(before, after, "reconfigure should install a fresh converter reflecting the new toggles");
+        } finally {
+            reporter.close();
+        }
+    }
+
+    @Test
+    void reconfigure_in_noop_mode_is_ignored() {
+        OtlpMetricReporter reporter = new OtlpMetricReporter();
+        // Invalid static config (timeout == interval) forces no-op mode.
+        reporter.configure(Map.of(
+                OtlpMetricReporterConfig.INTERVAL_MS, "1000",
+                OtlpMetricReporterConfig.TIMEOUT_MS, "1000"));
+        try {
+            assertNull(reporter.collector, "invalid static config should leave the reporter in no-op mode");
+            assertDoesNotThrow(() -> reporter.reconfigure(
+                    mergedConfig(Map.of(OtlpMetricReporterConfig.ALLOWED_METRICS, "producer-metrics\\..*"))));
+            // A no-op reporter cannot be revived by reconfigure — it stays no-op.
+            assertNull(reporter.collector, "reconfigure must not revive a no-op reporter");
+        } finally {
+            reporter.close();
+        }
+    }
+
+    @Test
+    void reconfigure_keeps_previous_settings_on_unexpected_failure() {
+        OtlpMetricReporter reporter = new OtlpMetricReporter();
+        reporter.configure(mergedConfig(Map.of(OtlpMetricReporterConfig.JVM_METRICS_ENABLED, "false")));
+        try {
+            AllowList before = reporter.collector.allowList();
+            // Defensive scenario: an invalid map reaches reconfigure directly (skipping validate).
+            // The re-parse throws inside reconfigure's fail-open catch, so nothing is swapped.
+            assertDoesNotThrow(
+                    () -> reporter.reconfigure(Map.of(OtlpMetricReporterConfig.ALLOWED_METRICS, "producer.[invalid")));
+            assertSame(
+                    before, reporter.collector.allowList(), "a failed reconfigure must keep the previous allow-list");
         } finally {
             reporter.close();
         }

@@ -8,25 +8,17 @@ import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class YammerMetricRegistryTest {
-
-    private static List<Pattern> patterns(String... regexes) {
-        List<Pattern> ps = new java.util.ArrayList<>();
-        for (String r : regexes) ps.add(Pattern.compile(r));
-        return ps;
-    }
 
     @Test
     void captures_existing_metrics_on_attach() {
         MetricsRegistry registry = new MetricsRegistry();
         registry.newCounter(new MetricName("kafka.server", "ReplicaManager", "UnderReplicatedPartitions"));
 
-        YammerMetricRegistry r = new YammerMetricRegistry(List.of());
+        YammerMetricRegistry r = new YammerMetricRegistry();
         r.attach(registry);
 
         assertEquals(1, r.snapshot().size());
@@ -36,7 +28,7 @@ class YammerMetricRegistryTest {
     void captures_metric_registered_during_initial_snapshot() {
         LateMetricRegistry registry = new LateMetricRegistry();
 
-        YammerMetricRegistry r = new YammerMetricRegistry(List.of());
+        YammerMetricRegistry r = new YammerMetricRegistry();
         r.attach(registry);
 
         assertTrue(r.snapshot().stream().anyMatch(e -> e.getKey().equals(registry.lateMetricName)));
@@ -45,7 +37,7 @@ class YammerMetricRegistryTest {
     @Test
     void captures_metrics_added_after_attach() {
         MetricsRegistry registry = new MetricsRegistry();
-        YammerMetricRegistry r = new YammerMetricRegistry(List.of());
+        YammerMetricRegistry r = new YammerMetricRegistry();
         r.attach(registry);
         registry.newCounter(new MetricName("kafka.controller", "KafkaController", "OfflinePartitionsCount"));
         assertEquals(1, r.snapshot().size());
@@ -56,26 +48,28 @@ class YammerMetricRegistryTest {
         MetricsRegistry registry = new MetricsRegistry();
         MetricName mn = new MetricName("kafka.server", "ReplicaManager", "UnderReplicatedPartitions");
         registry.newCounter(mn);
-        YammerMetricRegistry r = new YammerMetricRegistry(List.of());
+        YammerMetricRegistry r = new YammerMetricRegistry();
         r.attach(registry);
         registry.removeMetric(mn);
         assertEquals(0, r.snapshot().size());
     }
 
     @Test
-    void allow_list_filters_at_registration() {
+    void stores_every_metric_without_filtering() {
+        // The registry no longer filters at registration; the allow-list is applied at export
+        // time by the collector. Metrics from any group are captured here unconditionally.
         MetricsRegistry registry = new MetricsRegistry();
-        YammerMetricRegistry r = new YammerMetricRegistry(patterns("kafka\\.server\\..*"));
+        YammerMetricRegistry r = new YammerMetricRegistry();
         r.attach(registry);
         registry.newCounter(new MetricName("kafka.server", "ReplicaManager", "UnderReplicatedPartitions"));
         registry.newCounter(new MetricName("kafka.network", "RequestMetrics", "RequestsPerSec"));
-        assertEquals(1, r.snapshot().size());
+        assertEquals(2, r.snapshot().size());
     }
 
     @Test
     void detach_stops_receiving_events_and_clears_snapshot() {
         MetricsRegistry registry = new MetricsRegistry();
-        YammerMetricRegistry r = new YammerMetricRegistry(List.of());
+        YammerMetricRegistry r = new YammerMetricRegistry();
         r.attach(registry);
         registry.newCounter(new MetricName("kafka.server", "ReplicaManager", "UnderReplicatedPartitions"));
         assertEquals(1, r.snapshot().size());
@@ -91,7 +85,7 @@ class YammerMetricRegistryTest {
     @Test
     void detach_is_idempotent() {
         MetricsRegistry registry = new MetricsRegistry();
-        YammerMetricRegistry r = new YammerMetricRegistry(List.of());
+        YammerMetricRegistry r = new YammerMetricRegistry();
         r.attach(registry);
         r.detach();
         assertDoesNotThrow(r::detach);

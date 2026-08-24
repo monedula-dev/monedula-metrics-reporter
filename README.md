@@ -219,7 +219,7 @@ All keys use the prefix `otlp.metric.reporter.`.
 | `otlp.metric.reporter.transport` | Enum | `grpc` | `grpc` or `http` |
 | `otlp.metric.reporter.interval.ms` | Long | `30000` | Export interval in milliseconds |
 | `otlp.metric.reporter.timeout.ms` | Long | `5000` | Per-export call timeout in milliseconds |
-| `otlp.metric.reporter.allowed.metrics` | List | `""` | Comma-separated regex patterns used for allow-listing metrics. SPI metrics are matched against `{group}.{name}`; Yammer metrics are matched against `{group}.{type}.{name}`. Empty = allow all; an invalid pattern is logged at ERROR and the reporter runs as no-op so Kafka stays up |
+| `otlp.metric.reporter.allowed.metrics` | List | `""` | Comma-separated regex patterns used for allow-listing metrics. SPI metrics are matched against `{group}.{name}`; Yammer metrics are matched against `{group}.{type}.{name}`. Empty = allow all; an invalid pattern supplied at startup is logged at ERROR and the reporter runs as no-op so Kafka stays up. *Dynamic — changeable at runtime, see below.* |
 | `otlp.metric.reporter.resource.attributes` | String | `""` | Extra OTLP resource attributes: `key=value,key=value` |
 | `otlp.metric.reporter.headers` | String | `""` | Static OTLP request headers as `Header-Name=value,Other=value`. Use this for collector auth such as bearer tokens or API keys. Header values may contain `=`, but commas are treated as separators |
 | `otlp.metric.reporter.compression` | Enum | `none` | OTLP exporter compression: `none` or `gzip` |
@@ -228,17 +228,48 @@ All keys use the prefix `otlp.metric.reporter.`.
 | `otlp.metric.reporter.client.key.path` | String | `""` | Optional path to a PEM client private key for mTLS. Must be configured together with `otlp.metric.reporter.client.certificate.path` |
 | `otlp.metric.reporter.jvm.metrics.enabled` | Boolean | `true` | Whether to also export JVM runtime metrics via OpenTelemetry's runtime instrumentation library. Disable if you scrape JVM metrics elsewhere. |
 | `otlp.metric.reporter.client.telemetry.enabled` | Boolean | `true` | Enable the KIP-714 client-telemetry receiver. Auto-active on brokers but inert until a client-metrics subscription exists (see below); `false` makes the broker not advertise the capability at all |
-| `otlp.metric.reporter.client.telemetry.enrich.broker` | Boolean | `true` | Attach broker identity (`kafka_cluster_id` / `kafka_node_id`) to forwarded client metrics so they join broker series in PromQL |
-| `otlp.metric.reporter.client.telemetry.enrich.client.identity` | Boolean | `false` | Also attach the authenticated principal (`kafka_client_principal`) and client address (`kafka_client_address`). High-cardinality / PII — opt in deliberately |
-| `otlp.metric.reporter.client.telemetry.enrich.client.id` | Boolean | `true` | Attach the client's `client_id` (from the request context) as a label, so client metrics can be grouped per application. Moderate cardinality; on by default |
-| `otlp.metric.reporter.client.telemetry.enrich.client.instance.id` | Boolean | `false` | Attach the KIP-714 `client_instance_id` (a per-client-instance UUID) as a label. High cardinality — opt in deliberately |
+| `otlp.metric.reporter.client.telemetry.enrich.broker` | Boolean | `true` | Attach broker identity (`kafka_cluster_id` / `kafka_node_id`) to forwarded client metrics so they join broker series in PromQL. *Dynamic — changeable at runtime, see below.* |
+| `otlp.metric.reporter.client.telemetry.enrich.client.identity` | Boolean | `false` | Also attach the authenticated principal (`kafka_client_principal`) and client address (`kafka_client_address`). High-cardinality / PII — opt in deliberately. *Dynamic — changeable at runtime, see below.* |
+| `otlp.metric.reporter.client.telemetry.enrich.client.id` | Boolean | `true` | Attach the client's `client_id` (from the request context) as a label, so client metrics can be grouped per application. Moderate cardinality; on by default. *Dynamic — changeable at runtime, see below.* |
+| `otlp.metric.reporter.client.telemetry.enrich.client.instance.id` | Boolean | `false` | Attach the KIP-714 `client_instance_id` (a per-client-instance UUID) as a label. High cardinality — opt in deliberately. *Dynamic — changeable at runtime, see below.* |
 | `otlp.metric.reporter.client.telemetry.queue.capacity` | Int | `1024` | Bounded in-memory queue for inbound client pushes; overflow drops the payload (counted in `monedula_reporter_clienttelemetry_dropped_total`) |
 
 For TLS with the platform default trust store, use an `https://` OTLP endpoint. Configure `trusted.certificates.path` when the collector uses a private CA, and configure both client TLS paths when the collector requires mutual TLS. If any of these static settings are malformed or unreadable, the reporter logs the startup failure and runs as no-op so Kafka remains available.
 
 > **Security note.** Header values such as bearer tokens land in `server.properties` (or whichever Kafka config file you use) in plain text and are readable by anyone with file-system access to that file. Use Kafka's environment-variable config form (`KAFKA_OTLP_METRIC_REPORTER_HEADERS=...`) or a secrets-aware deployment system if you need to keep the token out of files on disk.
 
-Anything beyond the reporter-level controls above — credential rotation, HTTP/SOCKS proxy chains, fan-out to multiple backends, vendor-specific OTLP exporters (Grafana Cloud, Honeycomb, Datadog, …), batching/retry policy — lives in the OpenTelemetry Collector, not in this plugin. See the upstream [Collector configuration docs](https://opentelemetry.io/docs/collector/configuration/) for those operational concerns. The reporter's settings rotate via JVM restart only (see [docs/assumptions.md](docs/assumptions.md#operational-assumptions)).
+Anything beyond the reporter-level controls above — credential rotation, HTTP/SOCKS proxy chains, fan-out to multiple backends, vendor-specific OTLP exporters (Grafana Cloud, Honeycomb, Datadog, …), batching/retry policy — lives in the OpenTelemetry Collector, not in this plugin. See the upstream [Collector configuration docs](https://opentelemetry.io/docs/collector/configuration/) for those operational concerns. The reporter's connection settings (endpoint, transport, headers, TLS paths, `interval.ms`, `timeout.ms`, queue capacity) are static by design and rotate via JVM restart only; the five metric-filtering and client-telemetry enrichment keys marked *Dynamic* above are changeable live (see [docs/assumptions.md](docs/assumptions.md#operational-assumptions) and the next section).
+
+### Changing settings at runtime
+
+Five keys can be changed live via Kafka's dynamic broker configuration ([KIP-226](https://cwiki.apache.org/confluence/display/KAFKA/KIP-226+-+Dynamic+Broker+Configuration)), with no broker restart:
+
+- `otlp.metric.reporter.allowed.metrics`
+- `otlp.metric.reporter.client.telemetry.enrich.broker`
+- `otlp.metric.reporter.client.telemetry.enrich.client.identity`
+- `otlp.metric.reporter.client.telemetry.enrich.client.id`
+- `otlp.metric.reporter.client.telemetry.enrich.client.instance.id`
+
+Use `kafka-configs.sh` (or an AdminClient `incrementalAlterConfigs`) against the `brokers` entity type. `--entity-default` applies the change cluster-wide; `--entity-name <broker-id>` targets a single broker.
+
+```bash
+# Widen the allow-list on every broker, no restart (commas separate patterns; shell-quote the value):
+kafka-configs.sh --bootstrap-server localhost:9092 --entity-type brokers --entity-default \
+  --alter --add-config 'otlp.metric.reporter.allowed.metrics=producer-metrics\..*,consumer-fetch-manager-metrics\..*'
+
+# Inspect the current dynamic config:
+kafka-configs.sh --bootstrap-server localhost:9092 --entity-type brokers --entity-default --describe
+
+# Revert to the value in server.properties (or the default):
+kafka-configs.sh --bootstrap-server localhost:9092 --entity-type brokers --entity-default \
+  --alter --delete-config otlp.metric.reporter.allowed.metrics
+```
+
+- **Invalid values are rejected by the `--alter` itself.** The broker validates the change before applying it, so a bad regex or a non-boolean toggle fails the command and never reaches the running reporter — the export pipeline keeps running on the previous config.
+- **Changes take effect within one export interval** — a new allow-list is applied on the next export tick, and enrichment toggles on the next forwarded client payload.
+- **Dynamic values persist in cluster metadata** across restarts and take precedence over `server.properties` until you remove them with `--delete-config`.
+- **Only these five keys are dynamic.** Altering any other `otlp.metric.reporter.*` key (endpoint, transport, TLS, timings, …) is rejected by the broker, because those keys are not in the reporter's reconfigurable set — they still require a restart.
+- **`--describe` redacts the values.** These keys are unknown to the broker's own config schema, so Kafka treats them as sensitive and shows `value = null` / redacted in `--describe` output. You can confirm a key *is* dynamically overridden (it appears with source `DYNAMIC_BROKER_CONFIG`), but you cannot read its current value back through `--describe`; the real value is still delivered to the reporter. Track the intended values in your own config management.
 
 Metric names are emitted as flat lowercase `{namespace}_{group}_{name}` (Strimzi-style): non-alphanumeric characters become underscores, consecutive underscores collapse, and leading/trailing underscores are stripped. The `{namespace}` segment is sourced from `MetricsContext._namespace` (e.g. `kafka.server` on a broker, `kafka.producer` / `kafka.consumer` on clients). Example: broker-side `producer-metrics` / `record-send-rate` becomes `kafka_server_producer_metrics_record_send_rate`. If no namespace is present in the context, the prefix is omitted (`producer_metrics_record_send_rate`).
 
