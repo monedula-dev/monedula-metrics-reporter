@@ -5,7 +5,7 @@ services:
   # is set explicitly for __consumer_offsets and the transaction log so they
   # come up cleanly — the Kafka defaults assume a multi-broker cluster.
   kafka1:
-    image: apache/kafka:4.2.0
+    image: apache/kafka:4.2.1
     hostname: kafka1
     environment:
       KAFKA_NODE_ID: 1
@@ -31,7 +31,7 @@ services:
       - otel-collector
 
   kafka2:
-    image: apache/kafka:4.2.0
+    image: apache/kafka:4.2.1
     hostname: kafka2
     environment:
       KAFKA_NODE_ID: 2
@@ -57,7 +57,7 @@ services:
       - otel-collector
 
   kafka3:
-    image: apache/kafka:4.2.0
+    image: apache/kafka:4.2.1
     hostname: kafka3
     environment:
       KAFKA_NODE_ID: 3
@@ -124,7 +124,7 @@ services:
   # collector, populating the client dashboards. Also generates broker-side
   # traffic for the existing Production/Consumption dashboards.
   demo:
-    image: apache/kafka:4.2.0
+    image: apache/kafka:4.2.1
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
@@ -166,7 +166,7 @@ services:
   # can vanish after a broker recreate. confluent-kafka-python's AdminClient cannot create
   # a CLIENT_METRICS subscription, hence the apache/kafka CLI image here.
   demo-librdkafka-init:
-    image: apache/kafka:4.2.0
+    image: apache/kafka:4.2.1
     profiles: ["librdkafka"]
     entrypoint: ["/bin/bash", "-c"]
     command:

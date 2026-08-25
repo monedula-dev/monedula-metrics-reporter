@@ -141,7 +141,7 @@ class KafkaOtlpE2ETest {
                     .waitingFor(Wait.forHttp("/-/ready").forPort(9090));
             prometheus.start();
 
-            kafka = new GenericContainer<>("apache/kafka:4.2.0")
+            kafka = new GenericContainer<>("apache/kafka:4.2.1")
                     .withNetwork(network)
                     .withNetworkAliases("kafka")
                     .withEnv("KAFKA_NODE_ID", "1")
@@ -369,7 +369,7 @@ class KafkaOtlpE2ETest {
                 // returns an empty GetTelemetrySubscriptions response and clients don't push.
                 // ConfigResource.Type.CLIENT_METRICS is available since Kafka 3.7 (KIP-714).
                 //
-                // The "metrics" value MUST be "*" to subscribe to ALL client metrics. Kafka 4.2.0's
+                // The "metrics" value MUST be "*" to subscribe to ALL client metrics. Kafka 4.2.1's
                 // ClientMetricsConfigs defines ALL_SUBSCRIBED_METRICS = "*" and METRICS_DEFAULT =
                 // List.of() (empty). An empty string therefore selects NO metrics, so clients
                 // complete the GetTelemetrySubscriptions handshake but never push — which is exactly
