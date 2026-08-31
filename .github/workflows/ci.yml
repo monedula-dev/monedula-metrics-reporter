@@ -66,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java: ['17', '21']
+        java: ['17', '21', '25']
         kafka: ['3.7.2', '3.9.2', '4.2.1', '4.3.1']
     name: test (JDK ${{ matrix.java }} / Kafka ${{ matrix.kafka }})
     steps:
