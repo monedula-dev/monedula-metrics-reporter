@@ -50,6 +50,7 @@ full Cartesian product of the JDK and Kafka versions below:
 |---|:---:|:---:|:---:|:---:|
 | **JDK 17** | ✓ | ✓ | ✓ | ✓ |
 | **JDK 21** | ✓ | ✓ | ✓ | ✓ |
+| **JDK 25** | ✓ | ✓ | ✓ | ✓ |
 
 The end-to-end test (Kafka + OTel collector + Prometheus via Testcontainers)
 runs once per CI build against the default Kafka version (`4.2.1`) — the
