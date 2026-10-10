@@ -279,13 +279,13 @@ public class MetricCollector {
         }
     }
 
-    /** SPI filter subject — {@code {group}.{name}}, matching README's allowed.metrics semantics. */
+    /** SPI filter subject — {@code {group}.{name}}, matching the docs' allowed.metrics semantics. */
     private static String spiSubject(org.apache.kafka.common.metrics.KafkaMetric metric) {
         org.apache.kafka.common.MetricName mn = metric.metricName();
         return mn.group() + "." + mn.name();
     }
 
-    /** Yammer filter subject — {@code {group}.{type}.{name}}, matching README's allowed.metrics semantics. */
+    /** Yammer filter subject — {@code {group}.{type}.{name}}, matching the docs' allowed.metrics semantics. */
     private static String yammerSubject(com.yammer.metrics.core.MetricName name) {
         return name.getGroup() + "." + name.getType() + "." + name.getName();
     }

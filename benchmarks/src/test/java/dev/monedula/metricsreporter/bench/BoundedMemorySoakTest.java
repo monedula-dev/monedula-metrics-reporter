@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
  * baseline.
  *
  * <p>Backs the "no retry queue, bounded memory under a dead collector" claim
- * in docs/assumptions.md and README.md.
+ * in docs/assumptions.md and https://monedula.dev/flock/docs/metrics-reporter/concepts/fail-safe-design/.
  *
  * <p>The 100 MB threshold is deliberately generous: it's high enough that
  * JIT noise and per-iteration allocation churn cannot false-alarm, low

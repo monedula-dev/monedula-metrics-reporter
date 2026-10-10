@@ -59,7 +59,8 @@ jobs:
           fail-on-severity: high
 
   # Unit + integration tests across the supported JDK and Kafka surface.
-  # README claims Java 17+ and Apache Kafka 3.x / 4.x — this matrix keeps that claim honest.
+  # The README and the docs' Compatibility page claim Java 17+ and Apache Kafka 3.7+;
+  # this matrix keeps that claim honest.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20

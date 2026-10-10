@@ -5,7 +5,7 @@ Thanks for considering a contribution to `monedula-metrics-reporter`.
 ## Building locally
 
 Requirements:
-- JDK 17+ (the project compiles to bytecode targeting 17 and is tested on 17 and 21).
+- JDK 17+ (the project compiles to bytecode targeting 17 and is tested on 17, 21 and 25).
 - Docker — required only for the `:e2e:test` end-to-end suite and the Testcontainers-based `OtlpExportIntegrationTest`. Unit tests run fine without it.
 
 ```
