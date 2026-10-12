@@ -98,7 +98,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "## Producer (client) metrics\nPanels are grouped by KIP-714 portability. **Standard** panels are populated by *any* KIP-714 client (Java, librdkafka \u22652.5 \u2192 confluent-kafka Python/Go/.NET/Node, \u2026). **Extended** panels use Java/JVM-client-only metrics and will be **empty for librdkafka-based clients**. (Use the **Client** dropdown above to filter by `client_id`. Clients are now distinguishable, so the Java and librdkafka demos can run **side by side** and be compared \u2014 see the quickstart README.)"
+        "content": "## Producer (client) metrics\nPanels are grouped by KIP-714 portability. **Standard** panels are populated by *any* KIP-714 client (Java, librdkafka \u22652.5 \u2192 confluent-kafka Python/Go/.NET/Node, \u2026). **Extended** panels use Java/JVM-client-only metrics and will be **empty for librdkafka-based clients**. (Use the **Client** dropdown above to filter by `client_id`. Clients are now distinguishable, so the Java and librdkafka demos can run **side by side** and be compared \u2014 see [the Grafana quickstart](https://monedula.dev/flock/docs/metrics-reporter/tutorials/grafana-quickstart/#6-see-the-client-metrics).)"
       }
     },
     {

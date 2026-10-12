@@ -29,7 +29,8 @@ import org.testcontainers.utility.MountableFile;
  * 5-second latency toxic injected, while the reporter's timeout is 500 ms.
  *
  * <p>Backs the "slow collector can't stall Kafka - export times out, batch
- * drops, next tick is fresh" claim in architecture.md and README.md. This is
+ * drops, next tick is fresh" claim in architecture.md and
+ * https://monedula.dev/flock/docs/metrics-reporter/concepts/fail-safe-design/. This is
  * the TCP-accepted-but-stalled case, distinct from the TCP-refused case
  * already covered by OtlpExportIntegrationTest.collector_unavailable_does_not_throw.
  */
