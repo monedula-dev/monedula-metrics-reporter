@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-12
+
 ### Added
 
 - Live reconfiguration of metric filtering and client-telemetry enrichment via
@@ -31,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the broker's own metric count), which lets a dynamic widening of
   `allowed.metrics` resurrect metrics Kafka announced only once at startup. As a
   side effect, regex matching no longer runs on Kafka's hot metric-callback path.
+- CI runs the unit and integration tests on JDK 25 as well as 17 and 21, against
+  the latest Kafka patch releases: 3.7.2, 3.9.2, 4.2.1 and 4.3.1. The end-to-end
+  test runs against Kafka 4.2.1. The supported range is unchanged: Java 17 or
+  newer, Apache Kafka 3.7 or newer.
+- The documentation moved to https://monedula.dev/flock/docs/metrics-reporter/,
+  and the README is now a short overview that links to it.
 
 ## [0.10.0] - 2026-07-10
 

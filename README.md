@@ -8,10 +8,11 @@
 
 A Kafka MetricsReporter plugin that ships broker, JVM and KIP-714 client metrics over OTLP; a collector outage never blocks Kafka.
 
-**Documentation:** [monedula.dev/flock/docs/metrics-reporter](https://monedula.dev/flock/docs/metrics-reporter/), for the 0.10.0 release
+**Documentation:** [monedula.dev/flock/docs/metrics-reporter](https://monedula.dev/flock/docs/metrics-reporter/), for the 0.11.0 release
 
 - [Install the reporter on brokers](https://monedula.dev/flock/docs/metrics-reporter/how-to/install-on-brokers/), including how to verify the JAR's signature
 - [Run the Grafana quickstart](https://monedula.dev/flock/docs/metrics-reporter/tutorials/grafana-quickstart/)
+- [Filter metrics with an allow-list](https://monedula.dev/flock/docs/metrics-reporter/how-to/filter-metrics/), which can change on running brokers without a restart
 - [Collect Kafka client metrics with KIP-714](https://monedula.dev/flock/docs/metrics-reporter/how-to/collect-client-telemetry/)
 - [Configuration keys](https://monedula.dev/flock/docs/metrics-reporter/reference/configuration/) and [self-monitoring metrics](https://monedula.dev/flock/docs/metrics-reporter/reference/self-monitoring-metrics/)
 - [Compatibility](https://monedula.dev/flock/docs/metrics-reporter/concepts/compatibility/): the Java and Kafka versions it supports, and the version matrix CI tests
@@ -22,7 +23,7 @@ A Kafka MetricsReporter plugin that ships broker, JVM and KIP-714 client metrics
 Put the JAR on each broker's classpath:
 
 ```bash
-VERSION=0.10.0
+VERSION=0.11.0
 curl -L -o monedula-metrics-reporter-${VERSION}.jar \
   https://repo1.maven.org/maven2/dev/monedula/monedula-metrics-reporter/${VERSION}/monedula-metrics-reporter-${VERSION}.jar
 cp monedula-metrics-reporter-${VERSION}.jar $KAFKA_HOME/libs/
@@ -49,10 +50,6 @@ cd quickstart && docker compose up -d
 ```
 
 [Run the Grafana quickstart](https://monedula.dev/flock/docs/metrics-reporter/tutorials/grafana-quickstart/) walks through the dashboards and the demo clients.
-
-## Changes on main since 0.10.0
-
-The main branch has changes that are not released yet, listed under Unreleased in [CHANGELOG.md](CHANGELOG.md). The main one: the allow-list and the client-metric labels can change at runtime through dynamic broker configuration (KIP-226). The docs describe it in [Filter metrics with an allow-list](https://monedula.dev/flock/docs/metrics-reporter/how-to/filter-metrics/#in-builds-from-main-change-the-allow-list-at-runtime) and [Collect Kafka client metrics](https://monedula.dev/flock/docs/metrics-reporter/how-to/collect-client-telemetry/#in-builds-from-main-change-the-labels-at-runtime).
 
 ## Building from source
 
