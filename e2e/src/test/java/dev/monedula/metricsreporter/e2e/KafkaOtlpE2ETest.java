@@ -589,11 +589,15 @@ class KafkaOtlpE2ETest {
                     // the value (isSensitive=true, value="Redacted"). The redaction is only in the admin
                     // read-back — the broker still delivers the real value to the plugin's reconfigure().
                     // (This is why the resurrect assertion below is the actual proof the value took effect.)
-                    Config applied = admin.describeConfigs(List.of(broker))
-                            .all()
-                            .get(30, java.util.concurrent.TimeUnit.SECONDS)
-                            .get(broker);
-                    ConfigEntry allowedEntry = applied.get("otlp.metric.reporter.allowed.metrics");
+                    // incrementalAlterConfigs completes once the controller has committed the config
+                    // record; the broker replays it into its own dynamic config store a moment later,
+                    // so the admin read-back is eventually consistent and has to be polled.
+                    ConfigEntry allowedEntry = awaitConfigEntrySource(
+                            admin,
+                            broker,
+                            "otlp.metric.reporter.allowed.metrics",
+                            ConfigEntry.ConfigSource.DYNAMIC_BROKER_CONFIG,
+                            Duration.ofSeconds(30));
                     assertTrue(
                             allowedEntry != null
                                     && allowedEntry.source() == ConfigEntry.ConfigSource.DYNAMIC_BROKER_CONFIG,
@@ -617,6 +621,27 @@ class KafkaOtlpE2ETest {
             } finally {
                 stack.stopAll();
             }
+        }
+    }
+
+    /**
+     * Poll {@code describeConfigs} until {@code name} is reported with {@code source}, or
+     * {@code timeout} elapses. Returns the last entry seen (possibly null, or still carrying
+     * the pre-alter source) so the caller can assert on it and print it on failure.
+     */
+    private ConfigEntry awaitConfigEntrySource(
+            Admin admin, ConfigResource resource, String name, ConfigEntry.ConfigSource source, Duration timeout)
+            throws Exception {
+        long deadline = System.currentTimeMillis() + timeout.toMillis();
+        while (true) {
+            Config described = admin.describeConfigs(List.of(resource))
+                    .all()
+                    .get(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .get(resource);
+            ConfigEntry entry = described.get(name);
+            if (entry != null && entry.source() == source) return entry;
+            if (System.currentTimeMillis() >= deadline) return entry;
+            Thread.sleep(500);
         }
     }
 
