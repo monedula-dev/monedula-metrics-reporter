@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Build dependencies are now locked. Every resolvable configuration in the root,
+  `:e2e` and `:benchmarks` projects is pinned by a checked-in `gradle.lockfile`,
+  so a republished or hijacked upstream version cannot silently enter a build.
+  Regenerate with `./gradlew resolveAndLockAll --write-locks` after changing a
+  dependency. The `org.apache.kafka:*` and lz4 coordinates are excluded from the
+  lock state because CI resolves them at four different Kafka versions.
+- Every GitHub Actions step is pinned to a commit SHA rather than a mutable tag,
+  so a retagged third-party action cannot alter a CI or release run. Dependabot
+  keeps the pins and their version comments current.
+- `release.yml` defaults to `contents: read` and re-grants `contents: write`,
+  `packages: write` and `id-token: write` on the `publish` job alone, so any job
+  added later starts least-privileged.
+- The OpenTelemetry stack moved from 1.40.0 (June 2024) to 1.61.0, which carries
+  `okhttp` 4.12.0 -> 5.3.2 and with it `kotlin-stdlib` 1.9.10 -> 2.2.21. Unlike the
+  Kafka-side findings below, these two *do* ship inside the shadow jar (relocated
+  under `dev.monedula.metricsreporter.shaded.*`), so this is the one upgrade here
+  that changes what consumers actually receive.
+- Version floors for the native compression codecs `kafka-clients` pulls in:
+  `snappy-java` >= 1.1.10.12, `zstd-jni` >= 1.5.7-26, `lz4-java` >= 1.11.2. These
+  clear the 2026 double-free and out-of-bounds-read advisories in those
+  libraries. Note that `kafka-clients` is `compileOnly`/test-only here — the
+  broker supplies it and these natives at runtime, so none of it ever reached the
+  published jar; the floors protect the CI test JVM and keep dependency scans
+  clean.
+
+### Changed
+
+- The default `kafkaVersion` moved from 4.2.1 to 4.2.2, and the CI matrix from
+  3.7.2, 3.9.2, 4.2.1, 4.3.1 to 3.7.2, 3.9.2, 4.2.2, 4.3.2 — the patch releases
+  that carry Apache Kafka's OAUTHBEARER JWT signature-validation and
+  `FetchSnapshot` DoS fixes. The quickstart `docker-compose.yml` and the e2e
+  harness moved to the `apache/kafka:4.2.2` broker image for the same reason. The
+  supported range is unchanged: Java 17 or newer, Apache Kafka 3.7 or newer.
+- Dependency refresh. Several versions had drifted badly because Dependabot does
+  not resolve the `${name}Version` property references in `gradle.properties`:
+  OpenTelemetry SDK 1.40.0 -> 1.61.0, OpenTelemetry instrumentation 2.7.0-alpha ->
+  2.27.0-alpha, OpenTelemetry proto 1.7.0-alpha -> 1.11.1-alpha, JUnit 5.10.2 ->
+  5.14.4, Mockito 5.23.0 -> 5.24.0, SLF4J 2.0.18 -> 2.0.20, JaCoCo 0.8.13 ->
+  0.8.16. The Gradle plugins were already current.
+- The root build now imports `opentelemetry-bom` and `opentelemetry-bom-alpha`.
+  `otelVersion` must track the core release that `otelInstrumentationVersion` was
+  built against: the instrumentation artifacts pull in
+  `opentelemetry-api-incubator` at their own core version, and a skew between that
+  and `opentelemetry-sdk-metrics` is not a compile error - it surfaces at runtime
+  as a `NoClassDefFoundError` inside `PeriodicMetricReader`, which the reporter's
+  fail-open handling turns into silently missing JVM metrics.
+
 ## [0.11.0] - 2026-10-20
 
 ### Added

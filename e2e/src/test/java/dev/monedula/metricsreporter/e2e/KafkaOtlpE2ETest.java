@@ -141,7 +141,7 @@ class KafkaOtlpE2ETest {
                     .waitingFor(Wait.forHttp("/-/ready").forPort(9090));
             prometheus.start();
 
-            kafka = new GenericContainer<>("apache/kafka:4.2.1")
+            kafka = new GenericContainer<>("apache/kafka:4.2.2")
                     .withNetwork(network)
                     .withNetworkAliases("kafka")
                     .withEnv("KAFKA_NODE_ID", "1")

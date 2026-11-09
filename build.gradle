@@ -32,6 +32,52 @@ allprojects {
             // inception year and we don't want spotlessApply to roll that forward.
         }
     }
+
+    // Reproducible dependency resolution. Every resolvable configuration is pinned
+    // by a checked-in *.lockfile, so a republished or hijacked upstream version
+    // can't silently enter a build and `--refresh-dependencies` can't drift.
+    // Regenerate after any dependency change with:
+    //
+    //   ./gradlew resolveAndLockAll --write-locks
+    //
+    // The Kafka coordinates below are excluded on purpose: CI resolves them at four
+    // different versions (see the matrix in .github/workflows/ci.yml), and 3.x/4.x
+    // don't even agree on lz4's group id, so no single lock state can describe them.
+    // kafka-clients is compileOnly / test-only here anyway - the broker supplies it
+    // at runtime, so it never reaches the published jar.
+    dependencyLocking {
+        lockAllConfigurations()
+        ignoredDependencies.add('org.apache.kafka:*')
+        ignoredDependencies.add('org.lz4:*')
+        ignoredDependencies.add('at.yawk.lz4:*')
+    }
+
+    tasks.register('resolveAndLockAll') {
+        description = 'Resolves every lockable configuration so --write-locks can refresh the lockfiles.'
+        group = 'build setup'
+        notCompatibleWithConfigurationCache('Filters configurations at execution time')
+        doFirst {
+            assert gradle.startParameter.writeDependencyLocks:
+                    'resolveAndLockAll must be run with --write-locks'
+        }
+        doLast {
+            configurations.findAll { it.canBeResolved }.each { it.resolve() }
+        }
+    }
+
+    // Version floors for the native compression codecs kafka-clients pulls in.
+    // See the comment block in gradle.properties for why these are pinned ahead of
+    // what upstream Kafka ships. Declared as constraints (a minimum, not a force)
+    // so the oldest cells of the CI Kafka matrix still resolve.
+    plugins.withId('java') {
+        dependencies {
+            constraints {
+                implementation "org.xerial.snappy:snappy-java:${snappyVersion}"
+                implementation "com.github.luben:zstd-jni:${zstdVersion}"
+                implementation "at.yawk.lz4:lz4-java:${lz4Version}"
+            }
+        }
+    }
 }
 
 group = 'dev.monedula'
@@ -52,6 +98,13 @@ dependencies {
     compileOnly "org.apache.kafka:kafka-clients:${kafkaVersion}"
     compileOnly "org.slf4j:slf4j-api:${slf4jVersion}"
     compileOnly "com.yammer.metrics:metrics-core:${yammerMetricsVersion}"
+
+    // Align every OpenTelemetry artifact on one core release. The alpha BOM is what
+    // pins opentelemetry-api-incubator, which the instrumentation artifacts pull in at
+    // their own core version - see the note in gradle.properties for why a skew there
+    // breaks JVM metrics at runtime rather than at compile time.
+    implementation platform("io.opentelemetry:opentelemetry-bom:${otelVersion}")
+    implementation platform("io.opentelemetry:opentelemetry-bom-alpha:${otelVersion}-alpha")
 
     implementation "io.opentelemetry:opentelemetry-sdk:${otelVersion}"
     implementation "io.opentelemetry:opentelemetry-sdk-metrics:${otelVersion}"
@@ -77,7 +130,7 @@ test {
 }
 
 jacoco {
-    toolVersion = '0.8.13'
+    toolVersion = '0.8.16'
 }
 
 tasks.named('cyclonedxBom').configure {

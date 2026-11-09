@@ -15,6 +15,27 @@ Requirements:
 ./gradlew :benchmarks:jmh :benchmarks:test  # JMH + soak + timeout benchmarks (~10 min)
 ```
 
+## Changing a dependency
+
+Dependencies are locked. Each project has a checked-in `gradle.lockfile` pinning
+every module its resolvable configurations see, so a build can't silently pick up
+a different version than the one that was reviewed. After adding, removing or
+bumping a dependency — including the versions in `gradle.properties` — refresh
+the lock state and commit the result:
+
+```
+./gradlew resolveAndLockAll --write-locks
+```
+
+A build that resolves something the lockfile doesn't list fails with
+`Did not resolve <module> which is part of the lock state`. That's the lock doing
+its job: regenerate rather than deleting the file.
+
+`org.apache.kafka:*` and both lz4 group ids are deliberately excluded from
+locking — CI resolves them at four Kafka versions and 3.x/4.x disagree on lz4's
+group id, so no single lock state can cover them. `kafka-clients` is
+`compileOnly`/test-only anyway; the broker supplies it at runtime.
+
 ## Writing tests
 
 Most existing tests construct `KafkaMetric` via `Mockito.mock(KafkaMetric.class)`. That's fine for unit tests with bounded invocation counts. **Do not use Mockito mocks for hot-path benchmarks or long-running soak tests** — Mockito's ByteBuddy proxy adds ~15 µs per `metricName()` call (dominates nanosecond-scale measurements) and records every invocation on every mock for later verification (accumulates hundreds of MB during multi-minute runs and OOMs the test JVM). Construct real `KafkaMetric` instances via the public 5-arg constructor — see [`MetricChangeBenchmark`](benchmarks/src/jmh/java/dev/monedula/metricsreporter/bench/MetricChangeBenchmark.java) and [`BoundedMemorySoakTest`](benchmarks/src/test/java/dev/monedula/metricsreporter/bench/BoundedMemorySoakTest.java) for the pattern.
