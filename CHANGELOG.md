@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FetchSnapshot` DoS fixes. The quickstart `docker-compose.yml` and the e2e
   harness moved to the `apache/kafka:4.2.2` broker image for the same reason. The
   supported range is unchanged: Java 17 or newer, Apache Kafka 3.7 or newer.
+- The CI matrix now also covers Apache Kafka 4.4.0, the current latest minor,
+  alongside 3.7.2, 3.9.2, 4.2.2 and 4.3.2 (15 cells across JDK 17, 21 and 25).
+  The compiled-against default stays at 4.2.2 and the supported range is
+  unchanged: Java 17 or newer, Apache Kafka 3.7 or newer.
 - Dependency refresh. Several versions had drifted badly because Dependabot does
   not resolve the `${name}Version` property references in `gradle.properties`:
   OpenTelemetry SDK 1.40.0 -> 1.61.0, OpenTelemetry instrumentation 2.7.0-alpha ->
