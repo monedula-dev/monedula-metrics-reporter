@@ -8,7 +8,7 @@
 
 A Kafka MetricsReporter plugin that ships broker, JVM and KIP-714 client metrics over OTLP; a collector outage never blocks Kafka.
 
-**Documentation:** [monedula.dev/flock/docs/metrics-reporter](https://monedula.dev/flock/docs/metrics-reporter/), for the 0.11.0 release
+**Documentation:** [monedula.dev/flock/docs/metrics-reporter](https://monedula.dev/flock/docs/metrics-reporter/), for the 0.20.0 release
 
 - [Install the reporter on brokers](https://monedula.dev/flock/docs/metrics-reporter/how-to/install-on-brokers/), including how to verify the JAR's signature
 - [Run the Grafana quickstart](https://monedula.dev/flock/docs/metrics-reporter/tutorials/grafana-quickstart/)
@@ -23,7 +23,7 @@ A Kafka MetricsReporter plugin that ships broker, JVM and KIP-714 client metrics
 Put the JAR on each broker's classpath:
 
 ```bash
-VERSION=0.11.0
+VERSION=0.20.0
 curl -L -o monedula-metrics-reporter-${VERSION}.jar \
   https://repo1.maven.org/maven2/dev/monedula/monedula-metrics-reporter/${VERSION}/monedula-metrics-reporter-${VERSION}.jar
 cp monedula-metrics-reporter-${VERSION}.jar $KAFKA_HOME/libs/
