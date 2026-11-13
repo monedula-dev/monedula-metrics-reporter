@@ -31,6 +31,15 @@ dependencies {
     jmh project(path: ':', configuration: 'shadow')
     jmh "org.apache.kafka:kafka-clients:${kafkaVersion}"
 
+    // The jmh source set has its own configuration hierarchy and does not extend
+    // `implementation`, so the compression-codec floors declared in the root
+    // build's allprojects block don't reach it. Repeat them here.
+    constraints {
+        jmh "org.xerial.snappy:snappy-java:${snappyVersion}"
+        jmh "com.github.luben:zstd-jni:${zstdVersion}"
+        jmh "at.yawk.lz4:lz4-java:${lz4Version}"
+    }
+
     // --- test source set (soak + timeout) ---
     // No Mockito here for the same reason: per-mock invocation recording leaks
     // unbounded memory during multi-minute soak runs and OOMs the test JVM.

@@ -1,0 +1,44 @@
+# This is a Gradle generated file for dependency locking.
+# Manual edits can break the build and are not advised.
+# This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :benchmarks:dependencies --write-locks
+com.fasterxml.jackson.core:jackson-annotations:2.20=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.github.docker-java:docker-java-api:3.7.1=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.github.docker-java:docker-java-transport-zerodep:3.7.1=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.github.docker-java:docker-java-transport:3.7.1=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.github.luben:zstd-jni:1.5.7-26=jmh,jmhRuntimeClasspath,testRuntimeClasspath
+com.google.code.gson:gson:2.13.1=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.google.errorprone:error_prone_annotations:2.38.0=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+commons-codec:commons-codec:1.19.0=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+commons-io:commons-io:2.20.0=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+eu.rekawek.toxiproxy:toxiproxy-java:2.1.11=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+net.java.dev.jna:jna:5.18.1=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+net.sf.jopt-simple:jopt-simple:5.0.4=jmh,jmhCompileClasspath,jmhRuntimeClasspath
+org.apache.commons:commons-compress:1.28.0=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.apache.commons:commons-lang3:3.18.0=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.apache.commons:commons-math3:3.6.1=jmh,jmhCompileClasspath,jmhRuntimeClasspath
+org.apiguardian:apiguardian-api:1.1.2=testCompileClasspath
+org.jetbrains:annotations:17.0.0=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.junit.jupiter:junit-jupiter-api:5.14.4=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.junit.jupiter:junit-jupiter-engine:5.14.4=jmhRuntimeClasspath,testRuntimeClasspath
+org.junit.jupiter:junit-jupiter-params:5.14.4=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.junit.jupiter:junit-jupiter:5.14.4=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.junit.platform:junit-platform-commons:1.14.4=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.junit.platform:junit-platform-engine:1.14.4=jmhRuntimeClasspath,testRuntimeClasspath
+org.junit.platform:junit-platform-launcher:1.14.4=jmhRuntimeClasspath,testRuntimeClasspath
+org.junit:junit-bom:5.14.4=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.openjdk.jmh:jmh-core:1.37=jmh,jmhCompileClasspath,jmhRuntimeClasspath
+org.openjdk.jmh:jmh-generator-asm:1.37=jmh,jmhCompileClasspath,jmhRuntimeClasspath
+org.openjdk.jmh:jmh-generator-bytecode:1.37=jmh,jmhCompileClasspath,jmhRuntimeClasspath
+org.openjdk.jmh:jmh-generator-reflection:1.37=jmh,jmhCompileClasspath,jmhRuntimeClasspath
+org.opentest4j:opentest4j:1.3.0=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.ow2.asm:asm:9.0=jmh,jmhCompileClasspath,jmhRuntimeClasspath
+org.rnorth.duct-tape:duct-tape:1.0.8=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.slf4j:slf4j-api:1.7.36=jmh,testCompileClasspath
+org.slf4j:slf4j-api:2.0.20=jmhRuntimeClasspath,testRuntimeClasspath
+org.slf4j:slf4j-simple:2.0.20=jmhRuntimeClasspath,testRuntimeClasspath
+org.testcontainers:testcontainers-junit-jupiter:2.0.5=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.testcontainers:testcontainers-toxiproxy:2.0.5=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.testcontainers:testcontainers:2.0.5=jmhRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.xerial.snappy:snappy-java:1.1.10.12=jmh,jmhRuntimeClasspath,testRuntimeClasspath
+empty=annotationProcessor,compileClasspath,jmhAnnotationProcessor,runtimeClasspath,testAnnotationProcessor

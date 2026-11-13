@@ -5,29 +5,36 @@ on:
     tags:
       - 'v*'
 
+# Default to read-only for the whole workflow; the publish job below re-grants
+# exactly the write scopes it needs. Any job added later starts least-privileged
+# instead of inheriting release credentials it has no use for.
 permissions:
-  contents: write
-  packages: write
-  # Sigstore keyless signing reads an OIDC token from GitHub Actions to prove
-  # the workflow's identity to the public-good signing infrastructure. Without
-  # id-token write the cosign sign-blob step below would fail.
-  id-token: write
+  contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      # Creating the GitHub Release and uploading its assets.
+      contents: write
+      # Publishing the Maven artifacts to GitHub Packages.
+      packages: write
+      # Sigstore keyless signing reads an OIDC token from GitHub Actions to prove
+      # the workflow's identity to the public-good signing infrastructure. Without
+      # id-token write the cosign sign-blob step below would fail.
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6.4.1
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       - name: Derive version from tag
         id: version
@@ -77,7 +84,7 @@ jobs:
         run: ./gradlew publishAggregationToCentralPortal -PreleaseVersion=${{ steps.version.outputs.version }} --no-daemon --stacktrace
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
 
       - name: Sign release artifacts with cosign (keyless, Sigstore)
         env:
@@ -96,7 +103,7 @@ jobs:
           done
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           generate_release_notes: true
           files: |
