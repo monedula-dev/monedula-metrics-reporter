@@ -279,7 +279,7 @@ class KafkaOtlpE2ETest {
                                 + "to carry a kafka_node_id=\"1\" label sourced from MetricsContext");
 
                 // --- Assert JVM runtime metric appears in Prometheus ---
-                // RuntimeMetrics from opentelemetry-runtime-telemetry-java17 emits
+                // RuntimeTelemetry from opentelemetry-runtime-telemetry emits
                 // metrics like jvm.thread.count / jvm.memory.used. The collector's
                 // `prometheus` (pull) exporter sanitizes dots to underscores and may
                 // append unit suffixes, so we try several variants.

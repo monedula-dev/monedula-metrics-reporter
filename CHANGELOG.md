@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The OpenTelemetry stack moved to SDK 1.68.0 and instrumentation 2.34.0-alpha.
+  What had pinned `otelVersion` to 1.61.0 was the artifact, not the SDK:
+  `opentelemetry-runtime-telemetry-java17` was superseded by the unified
+  `opentelemetry-runtime-telemetry` module and its last release is 2.27.0-alpha,
+  whose POM targets core 1.61.0. The per-Java-version aliases were removed
+  upstream in instrumentation 2.28.0. This release switches to the unified module,
+  which puts `otelVersion` back in lockstep with the core release
+  `otelInstrumentationVersion` was built against - 2.34.0-alpha targets 1.68.0 -
+  so the BOM-alignment rule documented in 0.20.0 still holds.
+- `JvmMetricsLifecycle` now drives `RuntimeTelemetry` in place of
+  `RuntimeMetrics`, and no longer attempts the JFR-enabled start twice. The
+  unified module builds its JMX observables independently of its JFR stream and
+  returns a JMX-only handle when JFR cannot start - a read-only `/tmp` in a slim
+  container, say - so one `RuntimeTelemetry.create()` covers what the
+  `disableAllFeatures()` retry used to. The reporter's fail-open behaviour is
+  unchanged: a start failure is logged and the broker keeps running without JVM
+  metrics.
+- **The instrumentation scope on JVM runtime metrics changed.** Upstream renamed
+  it from `io.opentelemetry.runtime-telemetry-java17` to
+  `io.opentelemetry.runtime-telemetry` when it unified the module. Note what that
+  means for this plugin specifically: `shadowJar` rewrites the scope-name string
+  constant along with the package it relocates, so what the published jar emits is
+  the relocated form -
+  `dev.monedula.metricsreporter.shaded.opentelemetry.runtime-telemetry`, where it
+  used to be `...shaded.opentelemetry.runtime-telemetry-java17`. That relocated
+  name, not the upstream one, is what collector processors, views, dashboards and
+  alerts have to match. The scope now also carries the schema URL
+  `https://opentelemetry.io/schemas/1.44.0`.
+- The JVM metric set itself is unchanged. An e2e run against a real broker,
+  collector and Prometheus shows `jvm.class.count`, `jvm.class.loaded`,
+  `jvm.class.unloaded`, `jvm.cpu.count`, `jvm.cpu.recent_utilization`,
+  `jvm.cpu.time`, `jvm.gc.duration`, `jvm.memory.committed`, `jvm.memory.limit`,
+  `jvm.memory.used`, `jvm.memory.used_after_last_gc` and `jvm.thread.count`
+  arriving as before.
+- The unified module is a multi-release jar, so the shadow jar now declares
+  `Multi-Release: true` and carries its `META-INF/versions/17/` classes relocated
+  under `dev.monedula.metricsreporter.shaded.*` alongside the base ones.
+- Two of the transitive libraries that *do* ship inside the shadow jar moved with
+  the SDK bump: `okhttp` 5.3.2 -> 5.5.1 and `okio` 3.16.4 -> 3.18.1.
+  `kotlin-stdlib` stays at 2.2.21. `opentelemetry-semconv` moved 1.40.0 -> 1.45.0.
+- ASM in the `:benchmarks` jmh configuration moved 9.0 -> 9.11.1. JMH 1.37 still
+  resolves `jmh-generator-asm` against ASM 9.0 (2020), which cannot read class
+  files newer than Java 15 and reads as a stale dependency in scans. A constraint
+  in `benchmarks/build.gradle` (`asmVersion` in `gradle.properties`) pulls it up
+  to the release JaCoCo's tooling already resolves. The generator only reads the
+  benchmark classes this project compiles at release 17; `jmhRunBytecodeGenerator`
+  and `jmhJar` were verified against the new version. Nothing here reaches the
+  published jar - the jmh configuration is build-time only.
+- Remaining dependency refresh: JUnit 5.14.4 -> 6.1.3 (JUnit 6 requires Java 17,
+  which the project already floors at), the `zstd-jni` floor 1.5.7-26 -> 1.5.7-28,
+  and the CycloneDX Gradle plugin 3.6.0 -> 3.6.1 (the 3.5.1 -> 3.6.0 step and the
+  Gradle wrapper 9.8.2 -> 9.9.1 arrived on main separately). OpenTelemetry proto,
+  Mockito, Testcontainers, SLF4J, JaCoCo, the `snappy-java` floor and the other
+  Gradle plugins were already current. The default `kafkaVersion` deliberately
+  stays at 4.2.2 and the `lz4-java` floor at 1.11.2, the version Kafka 4.4.0
+  ships.
+- The `gradle.lockfile`s in the root, `:e2e` and `:benchmarks` projects were
+  regenerated for all of the above.
+
+### Security
+
+- Every `actions/checkout` step in `ci.yml`, `benchmarks.yml` and `release.yml`
+  now sets `persist-credentials: false`. The action's default leaves the job's
+  `GITHUB_TOKEN` in the runner's git config for the rest of the run, where any
+  later step or third-party action can read it. No workflow here pushes with that
+  token - the release job passes `GITHUB_TOKEN` explicitly to the steps that need
+  it - so nothing depends on the persisted credential.
+
 ## [0.20.0] - 2026-11-13
 
 ### Security
