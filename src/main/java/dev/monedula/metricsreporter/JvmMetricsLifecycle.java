@@ -2,7 +2,7 @@
 // Copyright (C) 2025 Monedula contributors
 package dev.monedula.metricsreporter;
 
-import io.opentelemetry.instrumentation.runtimemetrics.java17.RuntimeMetrics;
+import io.opentelemetry.instrumentation.runtimetelemetry.RuntimeTelemetry;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.opentelemetry.sdk.metrics.export.MetricExporter;
@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Owns the JVM-runtime-metrics side pipeline: a separate {@link SdkMeterProvider} that
- * feeds {@link RuntimeMetrics} instruments (memory / GC / threads / classes / CPU) into
+ * feeds {@link RuntimeTelemetry} instruments (memory / GC / threads / classes / CPU) into
  * the same OTLP collector as the Kafka metrics flow. Independent of the main
  * {@link MetricCollector} so its lifecycle can be torn down and rebuilt when broker
  * context labels arrive after {@code configure()}.
@@ -37,7 +37,7 @@ final class JvmMetricsLifecycle {
     private final OtlpMetricReporterConfig cfg;
 
     private volatile OpenTelemetrySdk sdk;
-    private volatile RuntimeMetrics runtimeMetrics;
+    private volatile RuntimeTelemetry runtimeTelemetry;
     /**
      * Resource attached to the current JVM-metrics SdkMeterProvider. Compared against a
      * fresh resource in {@link #rebuildIfRunning} to short-circuit no-op rebuilds.
@@ -50,25 +50,27 @@ final class JvmMetricsLifecycle {
     }
 
     /**
-     * Build the JVM-metrics SdkMeterProvider and start {@link RuntimeMetrics}.
-     * Tries the full JFR + JMX instrumentation first; falls back to JMX-only if JFR
-     * cannot start in the host JVM (e.g. read-only /tmp in a slim container).
+     * Build the JVM-metrics SdkMeterProvider and start {@link RuntimeTelemetry}.
+     *
+     * <p>No JFR / JMX two-attempt dance here: the unified {@code runtime-telemetry}
+     * module builds its JMX observables independently of its JFR stream and swallows a
+     * failed JFR start internally (returning a JMX-only telemetry handle), so a host JVM
+     * that cannot run JFR - a read-only {@code /tmp} in a slim container, say - still
+     * gets the JMX-sourced memory / GC / thread / class / CPU instruments. The earlier
+     * {@code runtime-telemetry-java17} module had no such behaviour and needed the
+     * explicit {@code disableAllFeatures()} retry this method used to perform.
      */
     void start(Map<String, String> resourceAttrs) {
         Resource res = ResourceFactory.create(resourceAttrs);
-        Handle handle = tryStart(res, /*jmxOnly=*/ false);
+        Handle handle = tryStart(res);
         if (handle == null) {
-            handle = tryStart(res, /*jmxOnly=*/ true);
-            if (handle == null) {
-                log.warn("JVM runtime metrics could not start (both JFR-enabled and JMX-only attempts failed)");
-                return;
-            }
+            return;
         }
         // Publish sdk last: it is the "ready" predicate used by rebuildIfRunning and
-        // close(), so writes to resource/runtimeMetrics happen-before the observable
+        // close(), so writes to resource/runtimeTelemetry happen-before the observable
         // transition from "not running" to "running".
         this.resource = res;
-        this.runtimeMetrics = handle.runtimeMetrics;
+        this.runtimeTelemetry = handle.runtimeTelemetry;
         this.sdk = handle.sdk;
         log.info("OtlpMetricReporter JVM runtime metrics enabled");
     }
@@ -106,42 +108,34 @@ final class JvmMetricsLifecycle {
         // closing. Mirror of the publish order in start().
         OpenTelemetrySdk s = this.sdk;
         this.sdk = null;
-        RuntimeMetrics rm = this.runtimeMetrics;
-        this.runtimeMetrics = null;
+        RuntimeTelemetry rt = this.runtimeTelemetry;
+        this.runtimeTelemetry = null;
         this.resource = null;
 
         // Close the SDK first so the PeriodicMetricReader's final flush picks up one
         // last reading from the runtime observables before they're shut down. Closing
-        // RuntimeMetrics first would make those observables inert and drop the last
+        // RuntimeTelemetry first would make those observables inert and drop the last
         // interval.
         if (s != null) {
             closeSdk(s);
         }
-        if (rm != null) {
+        if (rt != null) {
             try {
-                rm.close();
+                rt.close();
             } catch (Exception e) {
-                log.warn("Error shutting down JVM RuntimeMetrics", e);
+                log.warn("Error shutting down JVM RuntimeTelemetry", e);
             }
         }
     }
 
-    private Handle tryStart(Resource resource, boolean jmxOnly) {
+    private Handle tryStart(Resource resource) {
         OpenTelemetrySdk s = createSdk(resource);
         try {
-            RuntimeMetrics rm =
-                    jmxOnly ? RuntimeMetrics.builder(s).disableAllFeatures().build() : RuntimeMetrics.create(s);
-            return new Handle(s, rm);
+            return new Handle(s, RuntimeTelemetry.create(s));
         } catch (Throwable t) {
             closeSdk(s);
-            if (jmxOnly) {
-                log.warn("JVM runtime metrics JMX-only fallback failed", t);
-            } else {
-                log.warn(
-                        "JVM runtime metrics could not start with JFR enabled ({}); retrying with JMX-only metrics",
-                        t.toString());
-                log.debug("JVM runtime metrics JFR-enabled start failure detail", t);
-            }
+            log.warn("JVM runtime metrics could not start ({}); continuing without them", t.toString());
+            log.debug("JVM runtime metrics start failure detail", t);
             return null;
         }
     }
@@ -175,5 +169,5 @@ final class JvmMetricsLifecycle {
         }
     }
 
-    private record Handle(OpenTelemetrySdk sdk, RuntimeMetrics runtimeMetrics) {}
+    private record Handle(OpenTelemetrySdk sdk, RuntimeTelemetry runtimeTelemetry) {}
 }

@@ -9,7 +9,7 @@ plugins {
     // CycloneDX SBOM generator. The cyclonedxBom task writes build/reports/bom.json
     // describing every runtime dependency the shadow JAR bundles; release.yml
     // attaches it to the GitHub Release so consumers can verify the supply chain.
-    id 'org.cyclonedx.bom' version '3.6.0'
+    id 'org.cyclonedx.bom' version '3.6.1'
     // Format / lint enforcement. spotlessCheck runs in CI; spotlessApply formats
     // locally. The 'apply false' here lets the allprojects block below pick up
     // each module's Java source set (root, :e2e, :benchmarks).
@@ -109,7 +109,7 @@ dependencies {
     implementation "io.opentelemetry:opentelemetry-sdk:${otelVersion}"
     implementation "io.opentelemetry:opentelemetry-sdk-metrics:${otelVersion}"
     implementation "io.opentelemetry:opentelemetry-exporter-otlp:${otelVersion}"
-    implementation "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java17:${otelInstrumentationVersion}"
+    implementation "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry:${otelInstrumentationVersion}"
     implementation "io.opentelemetry.proto:opentelemetry-proto:${otelProtoVersion}"
 
     testImplementation "org.apache.kafka:kafka-clients:${kafkaVersion}"
@@ -164,7 +164,7 @@ shadowJar {
     reproducibleFileOrder = true
     // Relocate every third-party namespace the OTLP exporter pulls in, so the
     // plugin can't clash with anything else on the Kafka broker classpath.
-    // io.grpc is currently transitive-free (OTel 1.40 uses its own minimal
+    // io.grpc is currently transitive-free (the OTLP exporter uses its own minimal
     // marshalling) but kept defensively in case a future exporter pulls it in.
     relocate 'io.opentelemetry', 'dev.monedula.metricsreporter.shaded.opentelemetry'
     relocate 'io.grpc', 'dev.monedula.metricsreporter.shaded.grpc'
